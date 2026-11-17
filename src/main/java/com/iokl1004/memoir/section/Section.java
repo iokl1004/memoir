@@ -51,6 +51,15 @@ public class Section {
         return new Section(user, DEFAULT_NAME, true);
     }
 
+    /** 사용자가 직접 만드는 일반 섹션 */
+    public static Section of(User user, String name) {
+        return new Section(user, name, false);
+    }
+
+    public void rename(String name) {
+        this.name = name;
+    }
+
     public Long getId() {
         return id;
     }
