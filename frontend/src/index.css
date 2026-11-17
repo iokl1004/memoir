@@ -159,6 +159,19 @@ html:not([data-motion="off"]) .btn.btn--danger:hover { background: color-mix(in 
 }
 .section-row__toggle:hover { color: var(--ink); background: color-mix(in oklab, var(--ink) 6%, transparent); }
 .section-child-input { padding-left: calc(var(--indent) + 24px); }
+
+/* moving a section: the dragged row dims, the row it will go into gets a ring, a zone appears for "top level" */
+.section-row[draggable="true"] { cursor: grab; }
+.section-row[data-dragging] { opacity: .4; }
+.section-row[data-drop] { border-radius: var(--r-sm); box-shadow: inset 0 0 0 2px var(--action); background: color-mix(in oklab, var(--action) 10%, transparent); }
+.sections__root-drop {
+  margin-top: var(--s-2); padding: var(--s-3); border: 1px dashed var(--line-strong); border-radius: var(--r-sm);
+  font-size: var(--t-label); color: var(--muted); text-align: center;
+}
+.sections__root-drop[data-drop] { border: 2px solid var(--action); color: var(--ink); background: color-mix(in oklab, var(--action) 10%, transparent); }
+.sections__tip { flex-basis: 100%; margin-top: var(--s-1); font-size: var(--t-label); color: var(--muted); line-height: 1.5; }
+.sections__move { margin-top: var(--s-3); padding: var(--s-3) var(--s-3) 0; border-top: 1px solid var(--line); }
+.sections__move select { width: 100%; height: var(--btn-h-sm); }
 .sections__list > li > .name-input { padding-left: calc(var(--indent) + 24px); }
 
 .name-input { display: grid; gap: var(--s-2); padding: var(--s-2) 0; }

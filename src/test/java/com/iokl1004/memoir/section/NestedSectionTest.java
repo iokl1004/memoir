@@ -17,6 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -78,17 +79,79 @@ class NestedSectionTest {
     }
 
     @Test
-    void 상위_섹션을_고르면_하위_섹션의_메모까지_보인다() throws Exception {
+    void 섹션을_고르면_그_섹션에_바로_쓴_메모만_보인다() throws Exception {
         api.createMemo(companyA, "회사 공지");
         api.createMemo(projectA, "A 회의록");
         api.createMemo(deep, "회고 초안");
         api.createMemo(projectB, "B 일정");
         api.createMemo(null, "장보기");
 
-        assertThat(api.titles("sectionId=" + companyA)).containsExactlyInAnyOrder("회사 공지", "A 회의록", "회고 초안", "B 일정");
-        assertThat(api.titles("sectionId=" + projectA)).containsExactlyInAnyOrder("A 회의록", "회고 초안");
+        assertThat(api.titles("sectionId=" + companyA)).containsExactly("회사 공지");
+        assertThat(api.titles("sectionId=" + projectA)).containsExactly("A 회의록");
         assertThat(api.titles("sectionId=" + deep)).containsExactly("회고 초안");
-        assertThat(api.titles("sectionId=" + projectA + "&q=회고")).containsExactly("회고 초안");
+        assertThat(api.titles("sectionId=" + projectA + "&q=회고")).isEmpty();
+        assertThat(api.titles("")).hasSize(5);
+    }
+
+    // ---------- 섹션 옮기기 ----------
+
+    @Test
+    void 섹션을_다른_섹션_안이나_최상위로_옮기면_하위_섹션과_메모가_따라간다() throws Exception {
+        long companyB = api.createSection("B회사", null);
+        long memo = api.createMemo(deep, "회고 초안");
+
+        // A회사 > A프로젝트 > 2026 회고  →  B회사 > A프로젝트 > 2026 회고
+        api.json(put("/api/sections/{id}/parent", projectA), "{\"parentId\": %d}".formatted(companyB))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.parentId").value(companyB));
+        assertThat(parentOf(projectA)).isEqualTo((int) companyB);
+        assertThat(parentOf(deep)).isEqualTo((int) projectA);
+        api.perform(get("/api/memos/{id}", memo)).andExpect(jsonPath("$.sectionId").value(deep));
+
+        // 최상위로
+        api.json(put("/api/sections/{id}/parent", deep), "{\"parentId\": null}").andExpect(status().isOk());
+        assertThat(parentOf(deep)).isNull();
+    }
+
+    @Test
+    void 자기_자신이나_하위_섹션_안으로는_옮길_수_없다() throws Exception {
+        api.json(put("/api/sections/{id}/parent", companyA), "{\"parentId\": %d}".formatted(companyA))
+                .andExpect(status().isBadRequest());
+        api.json(put("/api/sections/{id}/parent", companyA), "{\"parentId\": %d}".formatted(deep))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("자기 자신이나 하위 섹션 안으로는 옮길 수 없어요."));
+        assertThat(parentOf(companyA)).isNull();
+    }
+
+    @Test
+    void 미분류는_옮길_수_없고_미분류_안으로도_옮길_수_없다() throws Exception {
+        long defaultId = ((Number) JsonPath.read(api.body(get("/api/sections")), "$[0].id")).longValue();
+        api.json(put("/api/sections/{id}/parent", defaultId), "{\"parentId\": %d}".formatted(companyA))
+                .andExpect(status().isBadRequest());
+        api.json(put("/api/sections/{id}/parent", projectB), "{\"parentId\": %d}".formatted(defaultId))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void 옮길_곳에_같은_이름이_있으면_409() throws Exception {
+        api.createSection("2026 회고", projectB);
+        api.json(put("/api/sections/{id}/parent", deep), "{\"parentId\": %d}".formatted(projectB))
+                .andExpect(status().isConflict());
+        assertThat(parentOf(deep)).isEqualTo((int) projectA);
+    }
+
+    @Test
+    void 다른_사람의_섹션은_옮길_수도_그_안으로_옮길_수도_없다() throws Exception {
+        Api other = Api.signupAndLogin(mvc);
+        long mine = other.createSection("내 섹션", null);
+        other.json(put("/api/sections/{id}/parent", companyA), "{\"parentId\": null}").andExpect(status().isNotFound());
+        other.json(put("/api/sections/{id}/parent", mine), "{\"parentId\": %d}".formatted(companyA))
+                .andExpect(status().isNotFound());
+    }
+
+    private Integer parentOf(long sectionId) throws Exception {
+        List<Integer> parents = JsonPath.read(api.body(get("/api/sections")), "$[?(@.id == %d)].parentId".formatted(sectionId));
+        return parents.getFirst();
     }
 
     @Test

@@ -6,7 +6,7 @@ import { api, ApiError, type MemoFilter, type MemoSort, type MemoSummary, type S
 import { useConfirm } from './confirm'
 import MemoEditor from './MemoEditor'
 import SectionOptions from './SectionOptions'
-import { buildTree, visibleNodes, type SectionNode } from './sectionTree'
+import { buildTree, moveTargets, visibleNodes, type SectionNode } from './sectionTree'
 import ThemeToggle from './ThemeToggle'
 
 type Selection = { kind: 'none' } | { kind: 'new' } | { kind: 'memo'; id: number }
@@ -214,7 +214,7 @@ export default function Workspace({ user, onLogout }: { user: User; onLogout: ()
             memos={memos}
             sort={sort}
             selectedId={selection.kind === 'memo' ? selection.id : null}
-            sectionLabel={filter.sectionId === undefined || (currentSection?.descendantCount ?? 0) > 0 ? sectionPath : undefined}
+            sectionLabel={filter.sectionId === undefined ? sectionPath : undefined}
             onOpen={id => select({ kind: 'memo', id })}
             onDelete={deleteMemo}
             onReorder={reorder}
@@ -418,7 +418,13 @@ function SearchBar({ tree, filter, onSearch }: {
 
 // ---------------------------------------------------------------- 섹션
 
-type Editing = { kind: 'add'; parentId: number | null } | { kind: 'rename'; id: number } | null
+type Editing =
+  | { kind: 'add'; parentId: number | null }
+  | { kind: 'rename'; id: number }
+  | { kind: 'move'; id: number }
+  | null
+/** 끌어 놓을 곳: 섹션 id, 또는 'root'(최상위) */
+type DropTarget = number | 'root' | null
 
 function SectionNav({ tree, activeId, onSelect, onChanged, onDeleted, onError }: {
   tree: SectionNode[]
@@ -432,9 +438,14 @@ function SectionNav({ tree, activeId, onSelect, onChanged, onDeleted, onError }:
   const [editing, setEditing] = useState<Editing>(null)
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
   const [error, setError] = useState('')
-  const total = tree.filter(s => s.depth === 0).reduce((n, s) => n + s.totalCount, 0)
+  const [dragId, setDragId] = useState<number | null>(null)
+  const [dropTarget, setDropTarget] = useState<DropTarget>(null)
+  const total = tree.reduce((n, s) => n + s.memoCount, 0)
   const active = tree.find(s => s.id === activeId)
   const shown = visibleNodes(tree, collapsed)
+  const targets = dragId === null ? [] : moveTargets(tree, dragId)
+  const canDropOn = (target: number | 'root') =>
+    targets.some(t => (target === 'root' ? t === null : t?.id === target))
 
   function toggle(id: number) {
     setCollapsed(prev => {
@@ -442,6 +453,33 @@ function SectionNav({ tree, activeId, onSelect, onChanged, onDeleted, onError }:
       if (!next.delete(id)) next.add(id)
       return next
     })
+  }
+
+  async function move(id: number, parentId: number | null) {
+    try {
+      await api.moveSection(id, parentId)
+      if (parentId !== null) setCollapsed(prev => { const n = new Set(prev); n.delete(parentId); return n })
+      setEditing(null)
+      setError('')
+      onChanged()
+    } catch (err) {
+      if (err instanceof ApiError && err.status !== 401) setError(err.message)
+      else onError(err)
+    }
+  }
+
+  function dragOver(e: DragEvent, target: number | 'root') {
+    if (!canDropOn(target)) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setDropTarget(target)
+  }
+
+  function drop(e: DragEvent, target: number | 'root') {
+    e.preventDefault()
+    if (dragId !== null && canDropOn(target)) move(dragId, target === 'root' ? null : target)
+    setDragId(null)
+    setDropTarget(null)
   }
 
   async function save(name: string) {
@@ -502,7 +540,21 @@ function SectionNav({ tree, activeId, onSelect, onChanged, onDeleted, onError }:
             {editing?.kind === 'rename' && editing.id === s.id ? (
               <NameInput label={`'${s.name}'의 새 이름`} initial={s.name} onSave={save} onCancel={cancel} />
             ) : (
-              <div className="section-row">
+              <div
+                className="section-row"
+                draggable={!s.isDefault}
+                data-dragging={dragId === s.id || undefined}
+                data-drop={dropTarget === s.id || undefined}
+                onDragStart={e => {
+                  setDragId(s.id)
+                  e.dataTransfer.effectAllowed = 'move'
+                  e.dataTransfer.setData('text/plain', s.name)
+                }}
+                onDragOver={e => dragOver(e, s.id)}
+                onDragLeave={() => setDropTarget(t => (t === s.id ? null : t))}
+                onDrop={e => drop(e, s.id)}
+                onDragEnd={() => { setDragId(null); setDropTarget(null) }}
+              >
                 {s.childIds.length > 0 ? (
                   <button type="button" className="section-row__toggle" aria-expanded={!collapsed.has(s.id)}
                           aria-label={`${s.name} 하위 섹션 ${collapsed.has(s.id) ? '펼치기' : '접기'}`}
@@ -511,8 +563,12 @@ function SectionNav({ tree, activeId, onSelect, onChanged, onDeleted, onError }:
                   </button>
                 ) : <span className="section-row__spacer" aria-hidden="true" />}
                 <button type="button" className="section-item" aria-current={activeId === s.id ? 'true' : undefined}
-                        onClick={() => onSelect(s.id)}>
-                  <span>{s.name}</span><span className="section-item__count">{s.totalCount}</span>
+                        aria-keyshortcuts={s.isDefault ? undefined : 'Delete'}
+                        onClick={() => onSelect(s.id)}
+                        onKeyDown={e => {
+                          if (e.key === 'Delete' && !s.isDefault) { e.preventDefault(); remove(s) }
+                        }}>
+                  <span>{s.name}</span><span className="section-item__count">{s.memoCount}</span>
                 </button>
               </div>
             )}
@@ -524,6 +580,15 @@ function SectionNav({ tree, activeId, onSelect, onChanged, onDeleted, onError }:
           </li>
         ))}
       </ul>
+
+      {dragId !== null && canDropOn('root') && (
+        <div className="sections__root-drop" data-drop={dropTarget === 'root' || undefined}
+             onDragOver={e => dragOver(e, 'root')}
+             onDragLeave={() => setDropTarget(t => (t === 'root' ? null : t))}
+             onDrop={e => drop(e, 'root')}>
+          여기에 놓으면 최상위로 옮겨요
+        </div>
+      )}
 
       {editing?.kind === 'add' && editing.parentId === null ? (
         <NameInput label="새 섹션 이름" initial="" onSave={save} onCancel={cancel} />
@@ -543,12 +608,58 @@ function SectionNav({ tree, activeId, onSelect, onChanged, onDeleted, onError }:
           <button type="button" className="textbtn" onClick={() => setEditing({ kind: 'rename', id: active.id })}>
             이름 바꾸기
           </button>
+          <button type="button" className="textbtn" onClick={() => setEditing({ kind: 'move', id: active.id })}>
+            위치 옮기기
+          </button>
           <button type="button" className="textbtn textbtn--danger" onClick={() => remove(active)}>
             섹션 지우기
           </button>
+          <p className="sections__tip">섹션을 끌어서 다른 섹션 위에 놓아도 옮겨져요.</p>
         </div>
       )}
+
+      {editing?.kind === 'move' && active && (
+        <MoveForm section={active} targets={moveTargets(tree, active.id)}
+                  onMove={parentId => move(active.id, parentId)} onCancel={cancel} />
+      )}
     </nav>
+  )
+}
+
+/** 끌기가 어려울 때(키보드, 휴대폰) 옮길 곳을 목록에서 골라요. */
+function MoveForm({ section, targets, onMove, onCancel }: {
+  section: SectionNode
+  targets: (SectionNode | null)[]
+  onMove: (parentId: number | null) => void
+  onCancel: () => void
+}) {
+  const [value, setValue] = useState(targets[0] === null ? 'root' : String(targets[0]?.id ?? ''))
+  const id = useId()
+  if (targets.length === 0) {
+    return (
+      <div className="name-input sections__move">
+        <p className="sections__tip">'{section.name}'을(를) 옮길 수 있는 곳이 없어요.</p>
+        <div className="name-input__actions">
+          <button type="button" className="btn btn--secondary btn--sm" onClick={onCancel}>닫기</button>
+        </div>
+      </div>
+    )
+  }
+  return (
+    <form className="name-input sections__move"
+          onSubmit={e => { e.preventDefault(); onMove(value === 'root' ? null : Number(value)) }}>
+      <label htmlFor={id} className="sections__tip">'{section.name}'을(를) 어디로 옮길까요?</label>
+      <select id={id} value={value} autoFocus onChange={e => setValue(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Escape') onCancel() }}>
+        {targets.map(t => t === null
+          ? <option key="root" value="root">최상위</option>
+          : <option key={t.id} value={t.id}>{t.path}</option>)}
+      </select>
+      <div className="name-input__actions">
+        <button type="submit" className="btn btn--primary btn--sm">옮기기</button>
+        <button type="button" className="btn btn--secondary btn--sm" onClick={onCancel}>취소</button>
+      </div>
+    </form>
   )
 }
 

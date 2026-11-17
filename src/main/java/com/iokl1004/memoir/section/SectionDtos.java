@@ -23,6 +23,10 @@ final class SectionDtos {
         }
     }
 
+    /** 옮길 곳의 상위 섹션. null이면 최상위로 옮겨요. */
+    record SectionMoveRequest(Long parentId) {
+    }
+
     record SectionResponse(Long id, Long parentId, String name, boolean isDefault) {
 
         static SectionResponse from(Section section) {

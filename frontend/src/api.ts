@@ -73,6 +73,9 @@ export const api = {
   createSection: (name: string, parentId: number | null) => request<Section>('POST', '/api/sections', { name, parentId }),
   renameSection: (id: number, name: string) => request<Section>('PATCH', `/api/sections/${id}`, { name }),
   deleteSection: (id: number) => request<void>('DELETE', `/api/sections/${id}`),
+  /** parentId가 null이면 최상위로 옮겨요. 하위 섹션과 메모는 함께 따라가요. */
+  moveSection: (id: number, parentId: number | null) =>
+    request<Section>('PUT', `/api/sections/${id}/parent`, { parentId }),
 
   memos: (filter: MemoFilter, sort: MemoSort, page: number) =>
     request<MemoPage>('GET', `/api/memos?${query({ ...filter, sort, page })}`),

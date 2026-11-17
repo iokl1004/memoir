@@ -65,6 +65,11 @@ public class Section {
         this.name = name;
     }
 
+    /** 다른 섹션 안으로 옮겨요. null이면 최상위 */
+    public void moveTo(Long parentId) {
+        this.parentId = parentId;
+    }
+
     public Long getId() {
         return id;
     }

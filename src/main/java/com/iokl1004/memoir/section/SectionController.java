@@ -3,6 +3,7 @@ package com.iokl1004.memoir.section;
 import com.iokl1004.memoir.auth.LoginUser;
 import com.iokl1004.memoir.section.SectionDtos.SectionCreateRequest;
 import com.iokl1004.memoir.section.SectionDtos.SectionListItem;
+import com.iokl1004.memoir.section.SectionDtos.SectionMoveRequest;
 import com.iokl1004.memoir.section.SectionDtos.SectionNameRequest;
 import com.iokl1004.memoir.section.SectionDtos.SectionResponse;
 import jakarta.validation.Valid;
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -46,6 +48,13 @@ public class SectionController {
     public SectionResponse rename(@AuthenticationPrincipal LoginUser user, @PathVariable Long id,
                                   @Valid @RequestBody SectionNameRequest request) {
         return SectionResponse.from(sectionService.rename(user.id(), id, request.name()));
+    }
+
+    /** 섹션을 다른 섹션 안이나 최상위로 옮겨요. 하위 섹션과 메모는 함께 따라가요. */
+    @PutMapping("/{id}/parent")
+    public SectionResponse move(@AuthenticationPrincipal LoginUser user, @PathVariable Long id,
+                                @RequestBody SectionMoveRequest request) {
+        return SectionResponse.from(sectionService.move(user.id(), id, request.parentId()));
     }
 
     @DeleteMapping("/{id}")

@@ -10,13 +10,13 @@ import com.iokl1004.memoir.memo.search.MemoSearcher;
 import com.iokl1004.memoir.memo.search.MemoSort;
 import com.iokl1004.memoir.section.Section;
 import com.iokl1004.memoir.section.SectionRepository;
-import com.iokl1004.memoir.section.SectionService;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
+import java.util.Set;
 
 @Service
 public class MemoService {
@@ -25,15 +25,12 @@ public class MemoService {
 
     private final MemoRepository memos;
     private final SectionRepository sections;
-    private final SectionService sectionService;
     private final UserRepository users;
     private final MemoSearcher searcher;
 
-    public MemoService(MemoRepository memos, SectionRepository sections, SectionService sectionService,
-                       UserRepository users, MemoSearcher searcher) {
+    public MemoService(MemoRepository memos, SectionRepository sections, UserRepository users, MemoSearcher searcher) {
         this.memos = memos;
         this.sections = sections;
-        this.sectionService = sectionService;
         this.users = users;
         this.searcher = searcher;
     }
@@ -111,8 +108,8 @@ public class MemoService {
         if (from != null && to != null && from.isAfter(to)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "시작일이 종료일보다 늦어요.");
         }
-        // 상위 섹션을 고르면 하위 섹션의 메모까지 함께 보여줘요.
-        var sectionIds = sectionId == null ? null : sectionService.sectionAndDescendants(userId, sectionId);
+        // 섹션을 고르면 그 섹션에 바로 쓴 메모만 보여줘요. 하위 섹션의 메모는 하위 섹션을 눌러서 봐요.
+        Set<Long> sectionIds = sectionId == null ? null : Set.of(sectionId);
         return MemoPage.from(searcher.search(new MemoSearchCondition(
                 userId, sectionIds, MemoSearchCondition.splitTerms(q), from, to, sort, page, size)), page);
     }

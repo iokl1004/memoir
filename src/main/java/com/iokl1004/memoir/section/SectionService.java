@@ -16,6 +16,7 @@ import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -90,10 +91,35 @@ public class SectionService {
         }
     }
 
-    /** 이 섹션과 모든 하위 섹션의 id. 내 섹션이 아니면 빈 집합이에요. 메모 목록에서 하위 메모까지 보여줄 때 써요. */
-    @Transactional(readOnly = true)
-    public Set<Long> sectionAndDescendants(Long userId, Long sectionId) {
-        return subtree(sections.findByUserId(userId), sectionId);
+    /**
+     * 섹션을 다른 섹션 안으로(newParentId), 또는 최상위로(null) 옮겨요. 하위 섹션과 메모는 함께 따라가요.
+     * 자기 자신이나 자기 하위 섹션 안으로는 옮길 수 없어요(순환). 옮길 곳에 같은 이름이 있으면 409예요.
+     */
+    @Transactional
+    public Section move(Long userId, Long sectionId, Long newParentId) {
+        Section section = findOwned(userId, sectionId);
+        if (section.isDefaultSection()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "미분류 섹션은 옮길 수 없어요.");
+        }
+        if (Objects.equals(section.getParentId(), newParentId)) {
+            return section;
+        }
+        if (newParentId != null) {
+            if (findOwned(userId, newParentId).isDefaultSection()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "미분류 안에는 섹션을 넣을 수 없어요.");
+            }
+            if (subtree(sections.findByUserId(userId), sectionId).contains(newParentId)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "자기 자신이나 하위 섹션 안으로는 옮길 수 없어요.");
+            }
+        }
+        requireUniqueName(userId, newParentId, section.getName());
+        section.moveTo(newParentId);
+        try {
+            sections.flush();
+        } catch (DataIntegrityViolationException e) {
+            throw duplicateName();
+        }
+        return section;
     }
 
     /** 위에서 아래로(BFS) 내려가며 모은 id. root가 목록에 없으면 빈 집합 */

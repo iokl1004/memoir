@@ -38,6 +38,25 @@ export function buildTree(sections: Section[]): SectionNode[] {
   return out
 }
 
+/** 이 섹션과 모든 하위 섹션의 id. 트리 순서(부모 다음에 자식)라서 깊이가 같거나 얕아지면 끝이에요. */
+export function subtreeIds(nodes: SectionNode[], id: number): Set<number> {
+  const start = nodes.findIndex(n => n.id === id)
+  const ids = new Set<number>()
+  if (start < 0) return ids
+  ids.add(id)
+  for (let i = start + 1; i < nodes.length && nodes[i].depth > nodes[start].depth; i++) ids.add(nodes[i].id)
+  return ids
+}
+
+/** 섹션을 옮길 수 있는 곳: 자기 자신과 하위, 미분류, 지금 있는 곳은 빼요. null은 최상위 */
+export function moveTargets(nodes: SectionNode[], id: number): (SectionNode | null)[] {
+  const self = nodes.find(n => n.id === id)
+  if (!self) return []
+  const blocked = subtreeIds(nodes, id)
+  const targets: (SectionNode | null)[] = nodes.filter(n => !n.isDefault && !blocked.has(n.id) && n.id !== self.parentId)
+  return self.parentId === null ? targets : [null, ...targets]
+}
+
 /** 접힌 섹션의 하위는 빼고 보여줄 목록 */
 export function visibleNodes(nodes: SectionNode[], collapsed: Set<number>): SectionNode[] {
   const hidden = new Set<number>()
