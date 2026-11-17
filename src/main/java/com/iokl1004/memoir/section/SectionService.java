@@ -7,7 +7,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.iokl1004.memoir.section.SectionDtos.SectionListItem;
+import com.iokl1004.memoir.section.SectionRepository.SectionMemoCount;
+
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 public class SectionService {
@@ -21,8 +26,13 @@ public class SectionService {
     }
 
     @Transactional(readOnly = true)
-    public List<Section> list(Long userId) {
-        return sections.findByUserIdOrderByDefaultSectionDescCreatedAtAscIdAsc(userId);
+    public List<SectionListItem> list(Long userId) {
+        Map<Long, Long> counts = sections.countMemosBySection(userId).stream()
+                .collect(Collectors.toMap(SectionMemoCount::getSectionId, SectionMemoCount::getMemoCount));
+        return sections.findByUserIdOrderByDefaultSectionDescCreatedAtAscIdAsc(userId).stream()
+                .map(s -> new SectionListItem(s.getId(), s.getName(), s.isDefaultSection(),
+                        counts.getOrDefault(s.getId(), 0L)))
+                .toList();
     }
 
     @Transactional

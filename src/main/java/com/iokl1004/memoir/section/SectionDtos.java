@@ -22,4 +22,8 @@ final class SectionDtos {
             return new SectionResponse(section.getId(), section.getName(), section.isDefaultSection());
         }
     }
+
+    /** 목록에서만 메모 개수를 함께 보여줘요. 예: 업무 (12) */
+    record SectionListItem(Long id, String name, boolean isDefault, long memoCount) {
+    }
 }

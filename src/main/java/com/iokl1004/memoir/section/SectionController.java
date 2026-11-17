@@ -1,6 +1,7 @@
 package com.iokl1004.memoir.section;
 
 import com.iokl1004.memoir.auth.LoginUser;
+import com.iokl1004.memoir.section.SectionDtos.SectionListItem;
 import com.iokl1004.memoir.section.SectionDtos.SectionNameRequest;
 import com.iokl1004.memoir.section.SectionDtos.SectionResponse;
 import jakarta.validation.Valid;
@@ -29,8 +30,8 @@ public class SectionController {
     }
 
     @GetMapping
-    public List<SectionResponse> list(@AuthenticationPrincipal LoginUser user) {
-        return sectionService.list(user.id()).stream().map(SectionResponse::from).toList();
+    public List<SectionListItem> list(@AuthenticationPrincipal LoginUser user) {
+        return sectionService.list(user.id());
     }
 
     @PostMapping
