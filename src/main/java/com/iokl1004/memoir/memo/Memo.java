@@ -30,6 +30,10 @@ public class Memo {
     @JoinColumn(name = "section_id", nullable = false)
     private Section section;
 
+    /** 사용자가 끌어서 정한 순서. 작을수록 위예요. 1024 간격으로 매기고, 사이에 끼울 자리가 없으면 다시 매겨요. */
+    @Column(nullable = false)
+    private long position;
+
     @Column(nullable = false, length = 100)
     private String title;
 
@@ -45,9 +49,10 @@ public class Memo {
     protected Memo() {
     }
 
-    public Memo(User user, Section section, String title, String content) {
+    public Memo(User user, Section section, long position, String title, String content) {
         this.user = user;
         this.section = section;
+        this.position = position;
         this.title = title;
         this.content = content;
         this.createdAt = LocalDateTime.now();
@@ -59,6 +64,15 @@ public class Memo {
         this.content = content;
         this.section = section;
         this.updatedAt = LocalDateTime.now();
+    }
+
+    /** 순서만 바꿔요. 내용을 고친 게 아니라서 수정일은 그대로 둬요. */
+    public void moveTo(long position) {
+        this.position = position;
+    }
+
+    public long getPosition() {
+        return position;
     }
 
     public Long getId() {

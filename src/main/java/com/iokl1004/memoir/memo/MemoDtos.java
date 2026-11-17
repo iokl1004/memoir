@@ -1,8 +1,8 @@
 package com.iokl1004.memoir.memo;
 
+import com.iokl1004.memoir.memo.search.MemoSearchResult;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
-import org.springframework.data.domain.Page;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -53,12 +53,17 @@ final class MemoDtos {
         }
     }
 
-    record MemoPage(List<MemoSummary> items, int page, int totalPages, long totalElements) {
+    /** totalCapped이면 total은 "이 수 이상"이에요. 다음 페이지가 있는지는 hasNext로 판단해요. */
+    record MemoPage(List<MemoSummary> items, int page, long total, boolean totalCapped, boolean hasNext) {
 
-        static MemoPage from(Page<Memo> page) {
-            return new MemoPage(page.map(MemoSummary::from).getContent(),
-                    page.getNumber(), page.getTotalPages(), page.getTotalElements());
+        static MemoPage from(MemoSearchResult result, int page) {
+            return new MemoPage(result.items().stream().map(MemoSummary::from).toList(),
+                    page, result.total(), result.totalCapped(), result.hasNext());
         }
+    }
+
+    /** 끌어 놓은 자리의 위(afterId)와 아래(beforeId) 메모. 맨 위나 맨 아래면 한쪽만 와요. */
+    record MemoMoveRequest(Long afterId, Long beforeId) {
     }
 
     private static String normalizeTitle(String title) {

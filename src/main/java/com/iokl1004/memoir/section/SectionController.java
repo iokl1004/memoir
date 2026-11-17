@@ -1,6 +1,7 @@
 package com.iokl1004.memoir.section;
 
 import com.iokl1004.memoir.auth.LoginUser;
+import com.iokl1004.memoir.section.SectionDtos.SectionCreateRequest;
 import com.iokl1004.memoir.section.SectionDtos.SectionListItem;
 import com.iokl1004.memoir.section.SectionDtos.SectionNameRequest;
 import com.iokl1004.memoir.section.SectionDtos.SectionResponse;
@@ -37,8 +38,8 @@ public class SectionController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public SectionResponse create(@AuthenticationPrincipal LoginUser user,
-                                  @Valid @RequestBody SectionNameRequest request) {
-        return SectionResponse.from(sectionService.create(user.id(), request.name()));
+                                  @Valid @RequestBody SectionCreateRequest request) {
+        return SectionResponse.from(sectionService.create(user.id(), request.name(), request.parentId()));
     }
 
     @PatchMapping("/{id}")

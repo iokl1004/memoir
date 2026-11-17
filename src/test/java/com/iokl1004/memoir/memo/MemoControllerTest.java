@@ -121,8 +121,9 @@ class MemoControllerTest {
 
         search("").andExpect(jsonPath("$.items", hasSize(20)))
                 .andExpect(jsonPath("$.items[0].title").value("메모 21"))
-                .andExpect(jsonPath("$.totalElements").value(21))
-                .andExpect(jsonPath("$.totalPages").value(2));
+                .andExpect(jsonPath("$.total").value(21))
+                .andExpect(jsonPath("$.totalCapped").value(false))
+                .andExpect(jsonPath("$.hasNext").value(true));
         search("page=1").andExpect(jsonPath("$.items[*].title").value(contains("메모 1")));
     }
 

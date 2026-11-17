@@ -8,7 +8,14 @@ final class SectionDtos {
     private SectionDtos() {
     }
 
-    /** 생성과 이름 변경에 같이 써요. 앞뒤 공백은 검증 전에 지워요. */
+    /** parentId가 없으면 최상위에 만들어요. 앞뒤 공백은 검증 전에 지워요. */
+    record SectionCreateRequest(@NotBlank @Size(max = 30) String name, Long parentId) {
+
+        SectionCreateRequest {
+            name = name == null ? null : name.trim();
+        }
+    }
+
     record SectionNameRequest(@NotBlank @Size(max = 30) String name) {
 
         SectionNameRequest {
@@ -16,14 +23,14 @@ final class SectionDtos {
         }
     }
 
-    record SectionResponse(Long id, String name, boolean isDefault) {
+    record SectionResponse(Long id, Long parentId, String name, boolean isDefault) {
 
         static SectionResponse from(Section section) {
-            return new SectionResponse(section.getId(), section.getName(), section.isDefaultSection());
+            return new SectionResponse(section.getId(), section.getParentId(), section.getName(), section.isDefaultSection());
         }
     }
 
-    /** 목록에서만 메모 개수를 함께 보여줘요. 예: 업무 (12) */
-    record SectionListItem(Long id, String name, boolean isDefault, long memoCount) {
+    /** memoCount는 이 섹션에 바로 쓴 메모 수예요. 하위 섹션까지 합친 수는 화면에서 트리로 더해요. */
+    record SectionListItem(Long id, Long parentId, String name, boolean isDefault, long memoCount) {
     }
 }

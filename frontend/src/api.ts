@@ -1,5 +1,6 @@
 export type User = { id: number; email: string }
-export type Section = { id: number; name: string; isDefault: boolean; memoCount: number }
+/** memoCount는 이 섹션에 바로 쓴 메모 수예요. 하위까지 합친 수는 sectionTree.ts가 계산해요. */
+export type Section = { id: number; parentId: number | null; name: string; isDefault: boolean; memoCount: number }
 export type Memo = {
   id: number
   sectionId: number
@@ -9,7 +10,9 @@ export type Memo = {
   updatedAt: string
 }
 export type MemoSummary = Omit<Memo, 'content'> & { preview: string }
-export type MemoPage = { items: MemoSummary[]; page: number; totalPages: number; totalElements: number }
+/** totalCapped이면 total은 "이 수 이상"이에요. */
+export type MemoPage = { items: MemoSummary[]; page: number; total: number; totalCapped: boolean; hasNext: boolean }
+export type MemoSort = 'CREATED_DESC' | 'CREATED_ASC' | 'UPDATED_DESC' | 'UPDATED_ASC' | 'TITLE_ASC' | 'TITLE_DESC' | 'CUSTOM'
 export type MemoFilter = { sectionId?: number; q?: string; from?: string; to?: string }
 
 /** 서버가 보낸 ProblemDetail의 status와 detail을 그대로 들고 있어요. */
@@ -31,7 +34,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     credentials: 'same-origin',
     headers: {
       ...(body !== undefined && { 'Content-Type': 'application/json' }),
-      // 세션 쿠키 방식이라 CSRF 토큰을 헤더로 같이 보내야 POST, PATCH, DELETE가 통과해요.
+      // 세션 쿠키 방식이라 CSRF 토큰을 헤더로 같이 보내야 POST, PATCH, PUT, DELETE가 통과해요.
       'X-XSRF-TOKEN': decodeURIComponent(xsrfToken()),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -67,14 +70,18 @@ export const api = {
   logout: () => request<void>('POST', '/api/auth/logout'),
 
   sections: () => request<Section[]>('GET', '/api/sections'),
-  createSection: (name: string) => request<Section>('POST', '/api/sections', { name }),
+  createSection: (name: string, parentId: number | null) => request<Section>('POST', '/api/sections', { name, parentId }),
   renameSection: (id: number, name: string) => request<Section>('PATCH', `/api/sections/${id}`, { name }),
   deleteSection: (id: number) => request<void>('DELETE', `/api/sections/${id}`),
 
-  memos: (filter: MemoFilter, page: number) => request<MemoPage>('GET', `/api/memos?${query({ ...filter, page })}`),
+  memos: (filter: MemoFilter, sort: MemoSort, page: number) =>
+    request<MemoPage>('GET', `/api/memos?${query({ ...filter, sort, page })}`),
   memo: (id: number) => request<Memo>('GET', `/api/memos/${id}`),
   createMemo: (m: { sectionId: number; title: string; content: string }) => request<Memo>('POST', '/api/memos', m),
   updateMemo: (id: number, m: { sectionId: number; title: string; content: string }) =>
     request<Memo>('PATCH', `/api/memos/${id}`, m),
   deleteMemo: (id: number) => request<void>('DELETE', `/api/memos/${id}`),
+  /** 끌어 놓은 자리의 위(afterId)와 아래(beforeId) 메모 */
+  moveMemo: (id: number, afterId: number | null, beforeId: number | null) =>
+    request<void>('PUT', `/api/memos/${id}/position`, { afterId, beforeId }),
 }

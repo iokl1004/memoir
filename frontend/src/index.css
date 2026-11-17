@@ -19,6 +19,41 @@
   color-scheme: dark;
 }
 
+/* light mode: the dealt palette's own inverse tokens (white ground, near-black ink and action) */
+html[data-theme="light"] {
+  --p-bg: #ffffff; --p-surface: #f2f2f0; --p-ink: #0f0f0f; --p-muted: #5f5f5f;
+  --p-accent: #0f0f0f; --p-accent-ink: #ffffff; --p-action: #0f0f0f; --p-action-ink: #ffffff;
+  --error: color-mix(in oklab, #d92d20 85%, var(--ink));
+  color-scheme: light;
+}
+/* the lime stays as the brand mark and the selected-memo bar in both modes */
+html[data-theme="light"] .brand__mark { background: #dafa9c; color: #0f0f0f; }
+html[data-theme="light"] .memo-item[aria-current="true"] { background: color-mix(in oklab, #dafa9c 45%, transparent); box-shadow: inset 2px 0 0 #0f0f0f; }
+
+.theme-toggle {
+  display: inline-grid; place-items: center; width: 40px; height: 40px; border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm); background: none; color: var(--ink); cursor: pointer;
+  transition: background-color var(--m-out, 120ms) var(--ease), border-color var(--m-out, 120ms) var(--ease);
+}
+.theme-toggle:hover { background: color-mix(in oklab, var(--ink) 8%, transparent); border-color: color-mix(in oklab, var(--ink) 32%, transparent); transition-duration: var(--m-in, 150ms); }
+.auth__theme { position: fixed; top: var(--s-4); right: var(--s-4); }
+
+/* confirm dialog (replaces the browser's confirm) */
+.dialog {
+  width: min(100% - 2 * var(--s-5), 420px); padding: var(--s-6); border: 1px solid var(--line-strong);
+  border-radius: var(--r-lg); background: var(--surface); color: var(--ink);
+  box-shadow: 0 24px 48px color-mix(in oklab, #000 35%, transparent);
+}
+.dialog::backdrop { background: color-mix(in oklab, #000 55%, transparent); }
+.dialog[open] { animation: dialog-in var(--m-panel, 200ms) var(--m-ease-enter, ease-out); }
+@keyframes dialog-in { from { opacity: 0; transform: translateY(6px); } }
+@media (prefers-reduced-motion: reduce) { .dialog[open] { animation: none; } }
+.dialog__title { font: 500 var(--t-card)/1.35 var(--font-text); letter-spacing: -0.01em; }
+.dialog__body { margin-top: var(--s-3); color: color-mix(in oklab, var(--ink) 80%, var(--surface)); line-height: 1.6; }
+.dialog__actions { margin-top: var(--s-6); justify-content: flex-end; }
+.btn.btn--danger { background: var(--error); color: #fff; }
+html:not([data-motion="off"]) .btn.btn--danger:hover { background: color-mix(in oklab, var(--error) 86%, var(--ink)); }
+
 .sections, .list, .editor__content {
   scrollbar-width: thin; scrollbar-color: color-mix(in oklab, var(--ink) 22%, transparent) transparent;
 }
@@ -109,10 +144,30 @@
 .section-item[aria-current="true"] { background: color-mix(in oklab, var(--ink) 10%, transparent); font-weight: 500; }
 .section-item__count { font: 400 var(--t-label)/1 var(--font-mono); color: var(--muted); }
 .sections__add { margin-top: var(--s-2); padding-left: var(--s-3); }
-.sections__actions { display: flex; gap: var(--s-3); margin-top: var(--s-3); padding: var(--s-3) var(--s-3) 0; border-top: 1px solid var(--line); }
+.sections__actions { display: flex; flex-wrap: wrap; column-gap: var(--s-3); margin-top: var(--s-3); padding: var(--s-3) var(--s-3) 0; border-top: 1px solid var(--line); }
+.sections__selected { flex-basis: 100%; font-size: var(--t-label); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sections__error { padding: 0 var(--s-3); }
-.name-input { display: flex; align-items: center; gap: var(--s-1); padding: var(--s-1) 0; }
-.name-input input { flex: 1 1 auto; min-width: 0; }
+
+/* tree: each level indents 14px; the toggle sits left of the name */
+.sections__list > li { --indent: calc(var(--depth, 0) * 14px); }
+.section-row { display: flex; align-items: center; padding-left: var(--indent); }
+.section-row > .section-item { flex: 1 1 auto; min-width: 0; padding-left: var(--s-1); }
+.section-row__toggle, .section-row__spacer { flex: none; width: 24px; height: 40px; }
+.section-row__toggle {
+  display: grid; place-items: center; border: 0; border-radius: var(--r-sm); background: none;
+  color: var(--muted); cursor: pointer; font-size: 12px;
+}
+.section-row__toggle:hover { color: var(--ink); background: color-mix(in oklab, var(--ink) 6%, transparent); }
+.section-child-input { padding-left: calc(var(--indent) + 24px); }
+.sections__list > li > .name-input { padding-left: calc(var(--indent) + 24px); }
+
+.name-input { display: grid; gap: var(--s-2); padding: var(--s-2) 0; }
+.name-input input { width: 100%; min-width: 0; }
+.name-input__actions { display: flex; gap: var(--s-2); }
+.name-input__actions .btn { flex: 1 1 0; }
+html[data-buttons="arrow"] .name-input__actions .btn--secondary { text-decoration: none; border-color: var(--line-strong); }
+/* the arrow marks a forward action; confirm, cancel and delete are not one */
+html[data-buttons="arrow"] :is(.name-input__actions, .dialog__actions) .btn::after { content: none; }
 
 .list { grid-area: list; overflow-y: auto; border-right: 1px solid var(--line); padding: var(--s-5) 0 var(--s-6); }
 .list__head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); padding: 0 var(--s-5); }
@@ -137,6 +192,26 @@
 }
 .memo-item__meta { font-size: var(--t-label); color: var(--muted); }
 .list__more { margin: var(--s-4) var(--s-5) 0; }
+
+.list__tools { display: flex; align-items: center; gap: var(--s-3); flex-wrap: wrap; padding: var(--s-3) var(--s-5) 0; }
+.list__sort {
+  height: var(--btn-h-sm); padding: 0 var(--s-3); border: 1px solid var(--line-strong); border-radius: var(--r-sm);
+  background: var(--bg); color: var(--ink); font: 400 var(--t-small)/1.4 var(--font-text);
+}
+.list__sort:focus-visible { outline: none; border-color: var(--action); box-shadow: 0 0 0 3px color-mix(in oklab, var(--action) 25%, transparent); }
+.list__hint { font-size: var(--t-label); color: var(--muted); }
+
+/* custom order: a grip, a dimmed card while dragging, a 2px line where it will land */
+.memo-list[data-custom] .memo-item { grid-template-columns: auto minmax(0, 1fr); column-gap: var(--s-3); cursor: grab; }
+.memo-list[data-custom] .memo-item > :not(.memo-item__grip) { grid-column: 2; }
+.memo-item__grip { grid-row: 1 / span 3; align-self: center; color: var(--muted); letter-spacing: -3px; font-size: 14px; }
+.memo-list > li { position: relative; }
+.memo-list > li[data-dragging] { opacity: .4; }
+.memo-list > li[data-drop]::before {
+  content: ""; position: absolute; left: var(--s-5); right: var(--s-5); height: 2px; background: var(--action); z-index: 1;
+}
+.memo-list > li[data-drop="before"]::before { top: -1px; }
+.memo-list > li[data-drop="after"]::before { bottom: -1px; }
 
 .pane { grid-area: pane; min-width: 0; overflow: hidden; }
 .pane__empty, .pane__loading { height: 100%; display: grid; place-items: center; padding: var(--s-6); color: var(--muted); text-align: center; }
@@ -181,7 +256,7 @@
   .search select { flex: 1 1 0; min-width: 0; }
   .search :is(input, select) { height: 44px; }
   .search__go { width: 100%; height: 44px; }
-  .list__head, .list__filter, .list > .status { padding-inline: var(--s-4); }
+  .list__head, .list__tools, .list__filter, .list > .status { padding-inline: var(--s-4); }
   .memo-item { padding: var(--s-4); }
   .list__more { width: calc(100% - 2 * var(--s-4)); margin-inline: var(--s-4); }
   .editor { padding: var(--s-3) var(--s-4); }

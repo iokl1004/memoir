@@ -1,6 +1,39 @@
 # 메모 검색 성능 측정
 
 LIKE 검색(1단계)과 MySQL FULLTEXT ngram 검색(2단계)을 같은 데이터, 같은 API로 비교했어요.
+그 결과를 보고 3단계(건수 상한 + 자동 선택)를 만들어서, **가장 느린 검색이 1,337ms → 27ms**가 됐어요.
+
+## 3단계: 건수 상한 + 자동 선택 (현재 기본값 `memoir.search.engine=auto`)
+
+1·2단계에서 찾은 두 가지 원인을 각각 고쳤어요.
+
+1. **전체 건수는 1,000건까지만 세요.** 화면은 "더 보기" 방식이라 정확한 전체 건수가 필요 없고, 1,000건이 넘으면 "1,000개 이상"으로 보여줘요. 다음 페이지가 있는지는 COUNT 없이 21건을 읽어서 알아내요. 마지막 페이지에서는 건수를 정확히 알아요.
+2. **검색할 때마다 LIKE와 FULLTEXT 중 빠른 쪽을 골라요** (`AdaptiveMemoSearcher`).
+   - 섹션이나 기간 조건이 있으면 → **LIKE**. B-tree 인덱스가 먼저 범위를 좁혀 줘요.
+   - 키워드만 있으면 → 최근 메모 2,000건에서 먼저 찾아봐요. 20건 이상 나오는 흔한 단어는 **LIKE**(인덱스 순서로 읽다가 금방 멈춤), 드문 단어나 없는 단어는 **FULLTEXT**를 써요.
+
+| 검색 | LIKE (1단계) | FULLTEXT (2단계) | LIKE + 상한 | FULLTEXT + 상한 | **auto (3단계)** |
+|---|---:|---:|---:|---:|---:|
+| 목록 (조건 없음) | 20.6 | 16.8 | 10.6 | 10.1 | **10.4** |
+| 흔한 단어: 배포 | 213.3 | 1,306.5 | 12.7 | 884.9 | **19.3** |
+| 드문 단어: 마이그레이션 | 258.6 | 17.7 | 232.6 | 18.9 | **26.5** |
+| 단어 2개: 배포 오류 | 228.2 | 1,247.3 | 16.2 | 964.0 | **22.1** |
+| 흔한 단어 + 섹션 | 43.1 | 1,336.5 | 12.0 | 914.3 | **11.5** |
+| 흔한 단어 + 기간 1개월 | 19.8 | 1,313.3 | 12.6 | 1,014.3 | **12.9** |
+| 없는 단어: 블록체인 | 222.1 | 6.0 | 200.5 | 5.2 | **12.1** |
+| **가장 느린 검색** | 258.6 | 1,336.5 | 232.6 | 1,014.3 | **26.5** |
+
+(p50, 단위 ms. 3단계 측정 때는 하위 섹션과 정렬 기능을 넣은 V3 마이그레이션이 적용된 상태예요.)
+
+- **건수 상한만** 넣으면 흔한 단어는 빨라지지만(213 → 13ms), 드문 단어와 없는 단어는 여전히 200ms가 넘어요. 결과가 1,000건보다 적으면 끝까지 세야 하기 때문이에요.
+- **자동 선택**이 그 경우를 FULLTEXT로 보내서 메워요. 드문 단어는 FULLTEXT 단독(18.9ms)보다 조금 느린데(26.5ms), 흔한 단어인지 알아보는 탐색 쿼리(최근 2,000건) 비용이에요.
+- 탐색 기준(2,000건 중 20건)은 이 데이터에 맞춘 값이에요. 메모가 아주 적은 사용자는 탐색할 것도 적어서 문제없고, 단어 분포가 크게 다르면 기준을 다시 재 봐야 해요.
+
+원본 결과: [`results/auto.json`](results/auto.json), [`results/like-capped.json`](results/like-capped.json), [`results/fulltext-capped.json`](results/fulltext-capped.json)
+
+---
+
+## 1·2단계 기록
 
 ## 결론
 
@@ -8,7 +41,7 @@ LIKE 검색(1단계)과 MySQL FULLTEXT ngram 검색(2단계)을 같은 데이터
 - **하지만 "흔한 단어"에서는 6배 느려졌어요.** 213ms → 1,307ms. 섹션이나 기간을 같이 걸면 20~43ms → 1,300ms 이상으로 더 크게 느려졌어요.
 - 원인은 **FULLTEXT 인덱스에 `user_id`가 없다**는 점이에요. 내 메모만 찾는데도 **모든 사용자의 메모에서 일치하는 26만 4천 건**을 먼저 꺼낸 뒤 내 것을 거르고, 그 전부를 정렬해요.
 - LIKE의 비용은 대부분 검색 자체가 아니라 **전체 건수 COUNT**에서 나와요. 흔한 단어는 첫 페이지 20건을 0.15ms에 찾지만, 전체 건수를 세는 데 216ms가 들어요.
-- 그래서 **기본 검색은 LIKE로 두고**(`memoir.search.engine=like`), FULLTEXT는 설정으로 켤 수 있게만 해 뒀어요.
+- 그래서 2단계 시점에는 기본 검색을 LIKE로 두었어요. (지금 기본값은 3단계 auto예요.)
 
 ## 결과 (p50 / p95, 단위 ms, 요청 20회)
 
@@ -66,12 +99,14 @@ LIKE 검색(1단계)과 MySQL FULLTEXT ngram 검색(2단계)을 같은 데이터
 ```bash
 docker run -d --name memoir-bench -e MYSQL_DATABASE=memoir -e MYSQL_USER=memoir -e MYSQL_PASSWORD=memoir \
   -e MYSQL_ROOT_PASSWORD=root -p 3307:3306 mysql:8.4 --innodb-buffer-pool-size=1G
-./gradlew bootRun --args='--spring.profiles.active=bench'                       # LIKE
+./gradlew bootRun --args='--spring.profiles.active=bench --memoir.search.engine=like'
 python bench/run.py --label like --signup                                     # 측정 사용자 가입
 python bench/seed.py | docker exec -i memoir-bench mysql --default-character-set=utf8mb4 -umemoir -pmemoir memoir
 python bench/run.py --label like
 ./gradlew bootRun --args='--spring.profiles.active=bench --memoir.search.engine=fulltext'
 python bench/run.py --label fulltext
+./gradlew bootRun --args='--spring.profiles.active=bench'                          # 기본값 auto
+python bench/run.py --label auto
 ```
 
 원본 결과: [`results/like.json`](results/like.json), [`results/fulltext.json`](results/fulltext.json)

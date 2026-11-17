@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, type User } from './api'
 import AuthScreen from './AuthScreen'
+import ConfirmProvider from './ConfirmDialog'
 import Workspace from './Workspace'
 
 export default function App() {
@@ -12,7 +13,13 @@ export default function App() {
     api.me().then(setUser, () => setUser(null))
   }, [])
 
-  if (user === undefined) return <p className="boot" role="status">불러오는 중</p>
-  if (user === null) return <AuthScreen onLogin={setUser} />
-  return <Workspace user={user} onLogout={() => setUser(null)} />
+  return (
+    <ConfirmProvider>
+      {user === undefined
+        ? <p className="boot" role="status">불러오는 중</p>
+        : user === null
+          ? <AuthScreen onLogin={setUser} />
+          : <Workspace user={user} onLogout={() => setUser(null)} />}
+    </ConfirmProvider>
+  )
 }

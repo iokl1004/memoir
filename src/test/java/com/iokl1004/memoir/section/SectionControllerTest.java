@@ -66,7 +66,7 @@ class SectionControllerTest {
         create("업무").andExpect(status().isCreated());
 
         create("업무").andExpect(status().isConflict())
-                .andExpect(jsonPath("$.detail").value("같은 이름의 섹션이 이미 있어요."));
+                .andExpect(jsonPath("$.detail").value("같은 위치에 같은 이름의 섹션이 이미 있어요."));
         create("미분류").andExpect(status().isConflict());
     }
 

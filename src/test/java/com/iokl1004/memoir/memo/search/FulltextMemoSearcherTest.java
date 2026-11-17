@@ -2,7 +2,6 @@ package com.iokl1004.memoir.memo.search;
 
 import com.iokl1004.memoir.TestcontainersConfiguration;
 import com.iokl1004.memoir.memo.Memo;
-import com.iokl1004.memoir.memo.MemoRepository;
 import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -17,6 +16,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -38,7 +38,7 @@ class FulltextMemoSearcherTest {
     MemoSearcher searcher;
 
     @Autowired
-    MemoRepository memos;
+    MemoSql sql;
 
     @Autowired
     JdbcTemplate jdbc;
@@ -68,31 +68,31 @@ class FulltextMemoSearcherTest {
         List<String> queries = List.of("배포", "배포 오류", "오류 배포", "deploy", "DATA", "data pipeline", "데이터",
                 "%", "50%", "_", "file_name", "회", "회 배포", "마이그레이션", "+더하기", "-빼기", "*별표",
                 "\"인용\"", "인용", "배");
-        LikeMemoSearcher like = new LikeMemoSearcher(memos);
+        LikeMemoSearcher like = new LikeMemoSearcher(sql);
 
         for (String q : queries) {
             MemoSearchCondition c = new MemoSearchCondition(userId, null, MemoSearchCondition.splitTerms(q),
-                    null, null, 0, 20);
-            assertThat(titles(searcher.search(c).getContent()))
+                    null, null, null, 0, 20);
+            assertThat(titles(searcher.search(c).items()))
                     .as("검색어 [%s]", q)
                     .isNotEmpty()
-                    .containsExactlyElementsOf(titles(like.search(c).getContent()));
+                    .containsExactlyElementsOf(titles(like.search(c).items()));
         }
     }
 
     @Test
     void 섹션과_기간_조건도_LIKE와_같다() {
-        LikeMemoSearcher like = new LikeMemoSearcher(memos);
+        LikeMemoSearcher like = new LikeMemoSearcher(sql);
         List<MemoSearchCondition> conditions = List.of(
-                new MemoSearchCondition(userId, workId, List.of("배포"), null, null, 0, 20),
-                new MemoSearchCondition(userId, null, List.of("배포"), LocalDate.of(2026, 3, 1), LocalDate.of(2026, 3, 31), 0, 20),
-                new MemoSearchCondition(userId, null, List.of("배포"), LocalDate.of(2026, 4, 1), null, 0, 20));
+                new MemoSearchCondition(userId, Set.of(workId), List.of("배포"), null, null, null, 0, 20),
+                new MemoSearchCondition(userId, null, List.of("배포"), LocalDate.of(2026, 3, 1), LocalDate.of(2026, 3, 31), null, 0, 20),
+                new MemoSearchCondition(userId, null, List.of("배포"), LocalDate.of(2026, 4, 1), null, null, 0, 20));
 
         for (MemoSearchCondition c : conditions) {
-            assertThat(titles(searcher.search(c).getContent()))
+            assertThat(titles(searcher.search(c).items()))
                     .as("조건 %s", c)
-                    .containsExactlyElementsOf(titles(like.search(c).getContent()));
-            assertThat(searcher.search(c).getTotalElements()).isEqualTo(like.search(c).getTotalElements());
+                    .containsExactlyElementsOf(titles(like.search(c).items()));
+            assertThat(searcher.search(c).total()).isEqualTo(like.search(c).total());
         }
     }
 
@@ -101,15 +101,15 @@ class FulltextMemoSearcherTest {
         session = signupAndLogin();
         create(null, "배포 회고", "남의 메모");
 
-        MemoSearchCondition c = new MemoSearchCondition(userId, null, List.of("배포"), null, null, 0, 20);
-        assertThat(searcher.search(c).getTotalElements()).isEqualTo(2);
+        MemoSearchCondition c = new MemoSearchCondition(userId, null, List.of("배포"), null, null, null, 0, 20);
+        assertThat(searcher.search(c).total()).isEqualTo(2);
     }
 
     @Test
     void 없는_단어는_둘_다_0건() {
-        MemoSearchCondition c = new MemoSearchCondition(userId, null, List.of("블록체인"), null, null, 0, 20);
-        assertThat(searcher.search(c).getTotalElements()).isZero();
-        assertThat(new LikeMemoSearcher(memos).search(c).getTotalElements()).isZero();
+        MemoSearchCondition c = new MemoSearchCondition(userId, null, List.of("블록체인"), null, null, null, 0, 20);
+        assertThat(searcher.search(c).total()).isZero();
+        assertThat(new LikeMemoSearcher(sql).search(c).total()).isZero();
     }
 
     private static List<String> titles(List<Memo> list) {

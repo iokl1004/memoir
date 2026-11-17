@@ -83,17 +83,20 @@ def main():
         path = "/api/memos?" + urllib.parse.urlencode(params)
         for _ in range(WARMUP):
             c.call("GET", path)
-        times, total = [], None
+        times, total, capped = [], None, False
         for _ in range(RUNS):
             t0 = time.perf_counter()
             page = c.call("GET", path)
             times.append((time.perf_counter() - t0) * 1000)
-            total = page["totalElements"]
-        results.append({"query": name, "params": params, "total": total,
+            # 1단계 측정(커밋 c7fb385)은 totalElements, 건수 상한을 넣은 뒤로는 total + totalCapped
+            total = page.get("total", page.get("totalElements"))
+            capped = page.get("totalCapped", False)
+        results.append({"query": name, "params": params, "total": total, "capped": capped,
                         "p50": round(percentile(times, .5), 1), "p95": round(percentile(times, .95), 1),
                         "mean": round(statistics.mean(times), 1)})
         r = results[-1]
-        print(f"{name:<24} 결과 {r['total']:>7,}건   p50 {r['p50']:>8.1f}ms   p95 {r['p95']:>8.1f}ms")
+        shown = f"{r['total']:,}+" if capped else f"{r['total']:,}"
+        print(f"{name:<24} 결과 {shown:>8}건   p50 {r['p50']:>8.1f}ms   p95 {r['p95']:>8.1f}ms")
 
     out = Path(__file__).parent / "results" / f"{args.label}.json"
     out.parent.mkdir(exist_ok=True)

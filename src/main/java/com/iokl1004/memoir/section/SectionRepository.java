@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -19,13 +20,16 @@ public interface SectionRepository extends JpaRepository<Section, Long> {
 
     Optional<Section> findByUserIdAndDefaultSectionTrue(Long userId);
 
-    boolean existsByUserIdAndName(Long userId, String name);
+    /** 같은 부모 아래에 같은 이름이 있는지. parentId가 null이면 최상위에서 찾아요. */
+    @Query("SELECT COUNT(s) > 0 FROM Section s WHERE s.user.id = :userId "
+            + "AND COALESCE(s.parentId, 0) = COALESCE(:parentId, 0) AND s.name = :name")
+    boolean existsSibling(@Param("userId") Long userId, @Param("parentId") Long parentId, @Param("name") String name);
 
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("UPDATE Memo m SET m.section.id = :toSectionId "
-            + "WHERE m.section.id = :fromSectionId AND m.user.id = :userId")
+            + "WHERE m.section.id IN :fromSectionIds AND m.user.id = :userId")
     int moveMemos(@Param("userId") Long userId,
-                  @Param("fromSectionId") Long fromSectionId,
+                  @Param("fromSectionIds") Collection<Long> fromSectionIds,
                   @Param("toSectionId") Long toSectionId);
 
     /** 섹션별 메모 개수. 메모가 없는 섹션은 결과에 없어요. */

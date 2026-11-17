@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react'
-import { api, ApiError, type Memo, type Section } from './api'
+import { api, ApiError, type Memo } from './api'
+import { useConfirm } from './confirm'
+import SectionOptions from './SectionOptions'
+import type { SectionNode } from './sectionTree'
 
 const timeFmt = new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium', timeStyle: 'short' })
 const MAX_CONTENT = 20_000
 
 type Draft = { title: string; content: string; sectionId: number | undefined }
 
-export default function MemoEditor({ memoId, sections, initialSectionId, onDirtyChange, onSaved, onDeleted, onClose, onError }: {
+export default function MemoEditor({ memoId, tree, initialSectionId, onDirtyChange, onSaved, onDeleted, onClose, onError }: {
   memoId: number | null
-  sections: Section[]
+  tree: SectionNode[]
   initialSectionId?: number
   onDirtyChange: (dirty: boolean) => void
   onSaved: (memo: Memo) => void
@@ -16,6 +19,7 @@ export default function MemoEditor({ memoId, sections, initialSectionId, onDirty
   onClose: () => void
   onError: (err: unknown) => void
 }) {
+  const confirm = useConfirm()
   const [memo, setMemo] = useState<Memo | null>(null)
   const [saved, setSaved] = useState<Draft>({ title: '', content: '', sectionId: initialSectionId })
   const [draft, setDraft] = useState<Draft>(saved)
@@ -69,7 +73,14 @@ export default function MemoEditor({ memoId, sections, initialSectionId, onDirty
   }
 
   async function remove() {
-    if (!memo || !window.confirm(`'${memo.title}' 메모를 지울까요? 지운 메모는 되살릴 수 없어요.`)) return
+    if (!memo) return
+    const ok = await confirm({
+      title: `'${memo.title}' 메모를 지울까요?`,
+      body: '지운 메모는 되살릴 수 없어요.',
+      confirmLabel: '메모 지우기',
+      danger: true,
+    })
+    if (!ok) return
     try {
       await api.deleteMemo(memo.id)
       onDeleted()
@@ -93,7 +104,7 @@ export default function MemoEditor({ memoId, sections, initialSectionId, onDirty
         <label className="sr-only" htmlFor="memo-section">섹션</label>
         <select id="memo-section" value={sectionId ?? ''}
                 onChange={e => setDraft({ ...draft, sectionId: Number(e.target.value) })}>
-          {sections.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          <SectionOptions tree={tree} />
         </select>
         <span className="editor__state" aria-live="polite">{dirty ? '저장 안 됨' : memo ? '저장됨' : ''}</span>
       </div>

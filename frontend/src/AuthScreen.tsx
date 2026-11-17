@@ -1,5 +1,6 @@
 import { useRef, useState, type FormEvent } from 'react'
 import { api, ApiError, type User } from './api'
+import ThemeToggle from './ThemeToggle'
 
 type Mode = 'login' | 'signup'
 type Errors = { email?: string; password?: string }
@@ -54,6 +55,7 @@ export default function AuthScreen({ onLogin }: { onLogin: (user: User) => void 
 
   return (
     <main className="auth">
+      <div className="auth__theme"><ThemeToggle /></div>
       <div className="auth__panel">
         <p className="brand">
           <span className="brand__mark" aria-hidden="true">m</span> memoir
