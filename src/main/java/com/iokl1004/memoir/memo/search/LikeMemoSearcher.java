@@ -5,11 +5,13 @@ import com.iokl1004.memoir.memo.MemoRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Component;
 
-/** 1단계 검색: LIKE '%단어%'. 인덱스를 탈 수 없어서 메모가 많아지면 느려져요. 이걸 측정하는 게 목적이에요. */
+/** 1단계 검색: LIKE '%단어%'. 인덱스를 탈 수 없어서 메모가 많아지면 느려져요. memoir.search.engine=like (기본값) */
 @Component
+@ConditionalOnProperty(name = "memoir.search.engine", havingValue = "like", matchIfMissing = true)
 public class LikeMemoSearcher implements MemoSearcher {
 
     private static final char ESCAPE = '!';
@@ -46,7 +48,7 @@ public class LikeMemoSearcher implements MemoSearcher {
     }
 
     /** 사용자가 입력한 %, _ 가 와일드카드로 동작하지 않게 막아요. (MySQL에서 \ 는 따옴표와 엉켜서 ! 를 써요) */
-    private static String escape(String term) {
+    static String escape(String term) {
         return term.replace("!", "!!").replace("%", "!%").replace("_", "!_");
     }
 }
