@@ -35,7 +35,7 @@ public class User {
         this.createdAt = LocalDateTime.now();
     }
 
-    /** 비밀번호 찾기로 새 비밀번호를 정할 때만 써요. 이미 암호화된 값을 받아요. */
+    /** 패스워드 찾기로 새 패스워드를 정할 때만 써요. 이미 암호화된 값을 받아요. */
     public void changePassword(String encodedPassword) {
         this.password = encodedPassword;
     }

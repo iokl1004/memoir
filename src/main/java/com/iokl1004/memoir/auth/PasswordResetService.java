@@ -17,9 +17,9 @@ import java.util.Base64;
 import java.util.HexFormat;
 
 /**
- * 비밀번호 찾기.
+ * 패스워드 찾기.
  * 1. 이메일을 받으면 1회용 링크를 메일로 보내요. 가입하지 않은 이메일이어도 똑같이 응답해서 가입 여부가 새지 않아요.
- * 2. 링크의 토큰과 새 비밀번호를 받으면 비밀번호를 바꾸고, 다른 기기의 로그인도 모두 끊어요.
+ * 2. 링크의 토큰과 새 패스워드를 받으면 패스워드를 바꾸고, 다른 기기의 로그인도 모두 끊어요.
  */
 @Service
 public class PasswordResetService {
@@ -70,7 +70,7 @@ public class PasswordResetService {
                 .params(hash(token), LocalDateTime.now())
                 .query(Long.class).optional()
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "링크가 만료됐거나 이미 썼어요. 비밀번호 찾기를 다시 해 주세요."));
+                        "링크가 만료됐거나 이미 썼어요. 패스워드 찾기를 다시 해 주세요."));
         User user = users.findById(userId).orElseThrow();
         user.changePassword(passwordEncoder.encode(rawPassword));
 

@@ -22,7 +22,7 @@ export default function App() {
 
   useEffect(() => {
     // 첫 요청에서 XSRF-TOKEN 쿠키도 함께 받아요.
-    // 재설정 링크로 왔으면 로그인돼 있어도 새 비밀번호 화면부터 보여줘요. (처음 한 번만 확인해요)
+    // 재설정 링크로 왔으면 로그인돼 있어도 새 패스워드 화면부터 보여줘요. (처음 한 번만 확인해요)
     const viaResetLink = resetToken !== undefined
     api.me().then(u => setUser(viaResetLink ? null : u), () => setUser(null))
     // eslint-disable-next-line react-hooks/exhaustive-deps

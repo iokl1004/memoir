@@ -28,9 +28,12 @@ export type MemoFilter = { sectionId?: number; q?: string; from?: string; to?: s
 /** 서버가 보낸 ProblemDetail의 status와 detail을 그대로 들고 있어요. */
 export class ApiError extends Error {
   status: number
-  constructor(status: number, message: string) {
+  /** ProblemDetail 본문 전체. 서버가 덧붙인 값(captchaRequired 등)을 읽을 때 써요. */
+  data?: Record<string, unknown>
+  constructor(status: number, message: string, data?: Record<string, unknown>) {
     super(message)
     this.status = status
+    this.data = data
   }
 }
 
@@ -56,7 +59,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   if (!res.ok) {
     throw new ApiError(res.status, data?.detail && data.detail !== 'Invalid request content.'
       ? data.detail
-      : messageFor(res.status))
+      : messageFor(res.status), data ?? undefined)
   }
   return data as T
 }
@@ -78,12 +81,20 @@ function query(params: Record<string, string | number | undefined>): string {
 export const api = {
   me: () => request<User>('GET', '/api/auth/me'),
   signup: (email: string, password: string) => request<User>('POST', '/api/auth/signup', { email, password }),
-  login: (email: string, password: string) => request<User>('POST', '/api/auth/login', { email, password }),
+  /** captchaToken: 여러 번 틀린 뒤 서버가 캡차를 요구할 때만 보내요. */
+  login: (email: string, password: string, captchaToken?: string) =>
+    request<User>('POST', '/api/auth/login', { email, password, captchaToken }),
   logout: () => request<void>('POST', '/api/auth/logout'),
-  /** 비밀번호 찾기 메일. 가입하지 않은 이메일이어도 똑같이 성공해요(가입 여부를 숨겨요). */
+  /** 패스워드 찾기 메일. 가입하지 않은 이메일이어도 똑같이 성공해요(가입 여부를 숨겨요). */
   requestPasswordReset: (email: string) => request<void>('POST', '/api/auth/password-reset', { email }),
   confirmPasswordReset: (token: string, password: string) =>
     request<void>('POST', '/api/auth/password-reset/confirm', { token, password }),
+  /** 로그인한 상태에서 패스워드 변경. 다른 기기의 로그인은 끊겨요. */
+  changePassword: (currentPassword: string, newPassword: string, captchaToken?: string) =>
+    request<void>('PUT', '/api/auth/password', { currentPassword, newPassword, captchaToken }),
+  /** 계정과 모든 메모를 지우고 로그아웃해요. */
+  deleteAccount: (password: string, captchaToken?: string) =>
+    request<void>('DELETE', '/api/auth/account', { password, captchaToken }),
 
   sections: () => request<Section[]>('GET', '/api/sections'),
   createSection: (name: string, parentId: number | null) => request<Section>('POST', '/api/sections', { name, parentId }),

@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
+import AccountDialog from './AccountDialog'
 import { api, ApiError, type MemoFilter, type MemoSort, type MemoSummary, type Section, type User } from './api'
 import { useConfirm } from './confirm'
 import MemoList from './MemoList'
@@ -57,6 +58,7 @@ export default function Workspace({ user, onLogout }: { user: User; onLogout: ()
   /** 사이드바가 들어가는 좁은 화면(태블릿, 휴대폰)에서는 섹션을 왼쪽에서 밀려 나오는 서랍으로 보여줘요. */
   const narrow = useMediaQuery('(max-width: 1099px)')
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [accountOpen, setAccountOpen] = useState(false)
   const drawer = narrow && drawerOpen
 
   const tree = useMemo(() => buildTree(sections, sectionSort), [sections, sectionSort])
@@ -230,6 +232,7 @@ export default function Workspace({ user, onLogout }: { user: User; onLogout: ()
         <div className="topbar__user">
           <ThemeToggle />
           <span className="topbar__email">{user.email}</span>
+          <button type="button" className="textbtn" onClick={() => setAccountOpen(true)}>계정</button>
           <button type="button" className="textbtn" onClick={logout}>로그아웃</button>
         </div>
       </header>
@@ -389,6 +392,9 @@ export default function Workspace({ user, onLogout }: { user: User; onLogout: ()
           </Suspense>
         )}
       </section>
+      {accountOpen && (
+        <AccountDialog user={user} onClose={() => setAccountOpen(false)} onDeleted={onLogout} />
+      )}
     </div>
   )
 }

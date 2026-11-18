@@ -45,7 +45,7 @@ class PasswordResetTest {
     PasswordResetMailer mailer;
 
     @Test
-    void 메일의_링크로_새_비밀번호를_정하면_새_비밀번호로만_로그인된다() throws Exception {
+    void 메일의_링크로_새_패스워드를_정하면_새_패스워드로만_로그인된다() throws Exception {
         String email = signup();
         String token = requestToken(email);
 
@@ -64,7 +64,7 @@ class PasswordResetTest {
 
         json("/api/auth/password-reset/confirm", "{\"token\": \"%s\", \"password\": \"another-pass3!\"}".formatted(token))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.detail").value("링크가 만료됐거나 이미 썼어요. 비밀번호 찾기를 다시 해 주세요."));
+                .andExpect(jsonPath("$.detail").value("링크가 만료됐거나 이미 썼어요. 패스워드 찾기를 다시 해 주세요."));
     }
 
     @Test
@@ -96,7 +96,7 @@ class PasswordResetTest {
     }
 
     @Test
-    void 새_비밀번호도_가입할_때와_같은_규칙을_지켜야_한다() throws Exception {
+    void 새_패스워드도_가입할_때와_같은_규칙을_지켜야_한다() throws Exception {
         String token = requestToken(signup());
         json("/api/auth/password-reset/confirm", "{\"token\": \"%s\", \"password\": \"short\"}".formatted(token))
                 .andExpect(status().isBadRequest());

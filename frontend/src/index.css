@@ -51,6 +51,15 @@ html[data-theme="light"] .memo-item[aria-current="true"] { background: color-mix
 .dialog__title { font: 500 var(--t-card)/1.35 var(--font-text); letter-spacing: -0.01em; }
 .dialog__body { margin-top: var(--s-3); color: color-mix(in oklab, var(--ink) 80%, var(--surface)); line-height: 1.6; }
 .dialog__actions { margin-top: var(--s-6); justify-content: flex-end; }
+/* account window: change password, delete account */
+.account { width: min(100% - 2 * var(--s-5), 460px); max-height: calc(100dvh - 2 * var(--s-5)); overflow-y: auto; }
+.account__head { display: flex; align-items: center; justify-content: space-between; }
+.account__email { margin-top: var(--s-1); color: var(--muted); font-size: var(--t-small); overflow-wrap: anywhere; }
+.account__section { grid-template-columns: minmax(0, 1fr); margin-top: var(--s-5); padding-top: var(--s-5); border-top: 1px solid var(--line); }
+.account__label { font: 500 var(--t-body)/1.4 var(--font-text); }
+.account__note { font-size: var(--t-small); color: var(--muted); line-height: 1.6; }
+.account__danger .account__label { color: var(--error); }
+html[data-buttons="arrow"] .account .btn::after { content: none; }
 .btn.btn--danger { background: var(--error); color: #fff; }
 html:not([data-motion="off"]) .btn.btn--danger:hover { background: color-mix(in oklab, var(--error) 86%, var(--ink)); }
 
@@ -110,6 +119,9 @@ html:not([data-motion="off"]) .btn.btn--danger:hover { background: color-mix(in 
 .auth__switch { font-size: var(--t-small); color: var(--muted); }
 .auth__forgot { display: flex; justify-content: flex-end; margin-top: calc(-1 * var(--s-2)); }
 .auth__email { color: var(--ink); font-weight: 500; overflow-wrap: anywhere; }
+/* captcha (Cloudflare Turnstile), shown only after several wrong passwords */
+.captcha { display: grid; gap: var(--s-2); min-height: 65px; }
+.captcha__label { font-size: var(--t-small); color: var(--muted); }
 .auth__sent { display: grid; gap: var(--s-3); }
 .auth__wait, .auth__sent .form__status { text-align: center; font-variant-numeric: tabular-nums; }
 html[data-buttons="arrow"] .auth__sent .btn--secondary::after { content: none; }

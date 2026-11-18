@@ -75,10 +75,10 @@ class AuthControllerTest {
     }
 
     @Test
-    void 비밀번호가_규칙에_맞지_않으면_400() throws Exception {
+    void 패스워드가_규칙에_맞지_않으면_400() throws Exception {
         mvc.perform(signup(newEmail(), "short")).andExpect(status().isBadRequest());
         mvc.perform(signup(newEmail(), "has space 123")).andExpect(status().isBadRequest());
-        mvc.perform(signup(newEmail(), "한글비밀번호입니다")).andExpect(status().isBadRequest());
+        mvc.perform(signup(newEmail(), "한글패스워드입니다")).andExpect(status().isBadRequest());
         mvc.perform(signup("not-an-email", PASSWORD)).andExpect(status().isBadRequest());
     }
 
@@ -104,16 +104,16 @@ class AuthControllerTest {
     }
 
     @Test
-    void 비밀번호가_틀리거나_없는_이메일이면_같은_401() throws Exception {
+    void 패스워드가_틀리거나_없는_이메일이면_같은_401() throws Exception {
         String email = newEmail();
         mvc.perform(signup(email, PASSWORD)).andExpect(status().isCreated());
 
         mvc.perform(login(email, "wrong-password"))
                 .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.detail").value("이메일 또는 비밀번호가 올바르지 않아요."));
+                .andExpect(jsonPath("$.detail").value("이메일 또는 패스워드가 올바르지 않아요."));
         mvc.perform(login(newEmail(), PASSWORD))
                 .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.detail").value("이메일 또는 비밀번호가 올바르지 않아요."));
+                .andExpect(jsonPath("$.detail").value("이메일 또는 패스워드가 올바르지 않아요."));
     }
 
     @Test

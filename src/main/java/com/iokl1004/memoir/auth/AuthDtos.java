@@ -16,14 +16,15 @@ final class AuthDtos {
             @NotBlank @Email @Size(max = 255) String email,
             // BCrypt는 72바이트까지만 쓰므로, 공백 없는 영문·숫자·특수문자 8~64자로 제한해요.
             @NotBlank @Pattern(regexp = "^[\\x21-\\x7E]{8,64}$",
-                    message = "비밀번호는 공백 없이 영문, 숫자, 특수문자로 8~64자여야 해요.") String password) {
+                    message = "패스워드는 공백 없이 영문, 숫자, 특수문자로 8~64자여야 해요.") String password) {
 
         SignupRequest {
             email = normalize(email);
         }
     }
 
-    record LoginRequest(@NotBlank String email, @NotBlank String password) {
+    /** captchaToken: 많이 틀린 뒤에만 필요해요(LoginThrottle). */
+    record LoginRequest(@NotBlank String email, @NotBlank String password, String captchaToken) {
 
         LoginRequest {
             email = normalize(email);
@@ -40,7 +41,16 @@ final class AuthDtos {
     record PasswordResetConfirm(
             @NotBlank @Size(max = 100) String token,
             @NotBlank @Pattern(regexp = "^[\\x21-\\x7E]{8,64}$",
-                    message = "비밀번호는 공백 없이 영문, 숫자, 특수문자로 8~64자여야 해요.") String password) {
+                    message = "패스워드는 공백 없이 영문, 숫자, 특수문자로 8~64자여야 해요.") String password) {
+    }
+
+    record PasswordChangeRequest(
+            @NotBlank @Size(max = 64) String currentPassword,
+            @NotBlank @Pattern(regexp = "^[\\x21-\\x7E]{8,64}$",
+                    message = "패스워드는 공백 없이 영문, 숫자, 특수문자로 8~64자여야 해요.") String newPassword, String captchaToken) {
+    }
+
+    record AccountDeleteRequest(@NotBlank @Size(max = 64) String password, String captchaToken) {
     }
 
     /** 검증 전에 이메일 앞뒤 공백을 지우고 소문자로 맞춰요. */
