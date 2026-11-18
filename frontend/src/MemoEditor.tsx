@@ -1,17 +1,29 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { EditorContent, useEditor, type Editor } from '@tiptap/react'
+import StarterKit from '@tiptap/starter-kit'
+import Image from '@tiptap/extension-image'
+import { Placeholder } from '@tiptap/extensions'
 import { api, ApiError, type Memo } from './api'
 import { useConfirm } from './confirm'
-import SectionOptions from './SectionOptions'
-import type { SectionNode } from './sectionTree'
 
 const timeFmt = new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium', timeStyle: 'short' })
 const MAX_CONTENT = 20_000
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
-type Draft = { title: string; content: string; sectionId: number | undefined }
+type Draft = { title: string; html: string }
 
-export default function MemoEditor({ memoId, tree, initialSectionId, onDirtyChange, onSaved, onDeleted, onClose, onError }: {
+/** 그림 기능 전에 쓴 메모(글자만)를 문단 HTML로 바꿔요. */
+function textToHtml(text: string): string {
+  const escape = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  return text.split('\n').map(line => `<p>${escape(line)}</p>`).join('')
+}
+
+function imageFiles(list: FileList | null | undefined): File[] {
+  return [...(list ?? [])].filter(f => f.type.startsWith('image/'))
+}
+
+export default function MemoEditor({ memoId, initialSectionId, onDirtyChange, onSaved, onDeleted, onClose, onError }: {
   memoId: number | null
-  tree: SectionNode[]
   initialSectionId?: number
   onDirtyChange: (dirty: boolean) => void
   onSaved: (memo: Memo) => void
@@ -21,25 +33,97 @@ export default function MemoEditor({ memoId, tree, initialSectionId, onDirtyChan
 }) {
   const confirm = useConfirm()
   const [memo, setMemo] = useState<Memo | null>(null)
-  const [saved, setSaved] = useState<Draft>({ title: '', content: '', sectionId: initialSectionId })
+  const [saved, setSaved] = useState<Draft>({ title: '', html: '' })
   const [draft, setDraft] = useState<Draft>(saved)
+  const [textLength, setTextLength] = useState(0)
   const [status, setStatus] = useState('')
   const [busy, setBusy] = useState(false)
+  const [uploading, setUploading] = useState(0)
+  const editorRef = useRef<Editor | null>(null)
+
+  /** 그림을 올리고 pos(없으면 커서 자리)에 넣어요. 붙여넣기와 끌어 놓기가 함께 써요. */
+  async function insertImages(files: File[], pos?: number) {
+    if (files.some(f => f.size > MAX_IMAGE_BYTES)) setStatus('그림은 한 장에 5MB까지 넣을 수 있어요.')
+    const ok = files.filter(f => f.size <= MAX_IMAGE_BYTES)
+    if (!ok.length) return
+    setUploading(n => n + ok.length)
+    setStatus('그림을 올리는 중')
+    for (const file of ok) {
+      try {
+        const { url } = await api.uploadImage(file)
+        const editor = editorRef.current
+        if (!editor || editor.isDestroyed) return
+        const node = { type: 'image', attrs: { src: url } }
+        if (pos === undefined) editor.chain().focus().insertContent(node).run()
+        else editor.chain().focus().insertContentAt(pos, node).run()
+        setStatus('')
+      } catch (err) {
+        setStatus(err instanceof ApiError ? `그림을 넣지 못했어요. ${err.message}` : '그림을 넣지 못했어요.')
+        if (err instanceof ApiError && err.status === 401) onError(err)
+      } finally {
+        setUploading(n => n - 1)
+      }
+    }
+  }
+  // 편집기 핸들러는 처음 만들 때 한 번만 등록돼서, 항상 최신 함수를 부르도록 ref로 넘겨요.
+  const insertRef = useRef(insertImages)
+  useEffect(() => { insertRef.current = insertImages })
+
+  const editor = useEditor({
+    extensions: [
+      StarterKit.configure({ link: { openOnClick: false } }),
+      // 그림을 고르면 좌우 모서리 손잡이가 생겨요. 비율은 그대로 두고 넓이만 바꿔요.
+      Image.configure({
+        resize: { enabled: true, directions: ['left', 'right', 'bottom-left', 'bottom-right'], minWidth: 80, alwaysPreserveAspectRatio: true },
+      }),
+      Placeholder.configure({ placeholder: '여기에 메모를 적어요. 그림은 붙여넣거나 끌어다 놓으면 들어가요.' }),
+    ],
+    editorProps: {
+      attributes: { id: 'memo-content', class: 'editor__content', 'aria-label': '본문', 'aria-describedby': 'memo-count' },
+      handlePaste: (_view, event) => {
+        const files = imageFiles(event.clipboardData?.files)
+        if (!files.length) return false
+        event.preventDefault()
+        insertRef.current(files)
+        return true
+      },
+      handleDrop: (view, event, _slice, moved) => {
+        const files = moved ? [] : imageFiles(event.dataTransfer?.files)
+        if (!files.length) return false
+        event.preventDefault()
+        insertRef.current(files, view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos)
+        return true
+      },
+    },
+    onCreate: ({ editor }) => {
+      if (memoId !== null) return
+      // 새 메모: 편집기가 정리한 빈 본문을 저장된 값으로 삼아요.
+      const empty = { title: '', html: editor.getHTML() }
+      setSaved(empty)
+      setDraft(empty)
+    },
+    onUpdate: ({ editor }) => {
+      setDraft(d => ({ ...d, html: editor.getHTML() }))
+      setTextLength(editor.getText().length)
+    },
+  })
+  useEffect(() => { editorRef.current = editor }, [editor])
 
   useEffect(() => {
-    if (memoId === null) return
+    if (memoId === null || !editor) return
     api.memo(memoId).then(m => {
-      const d = { title: m.title, content: m.content, sectionId: m.sectionId }
+      if (editor.isDestroyed) return
+      editor.commands.setContent(m.contentHtml ?? textToHtml(m.content), { emitUpdate: false })
+      // 편집기가 HTML을 자기 모양으로 정리하니, 정리된 값을 기준으로 삼아야 "저장 안 됨"이 잘못 뜨지 않아요.
+      const d = { title: m.title, html: editor.getHTML() }
       setMemo(m)
       setSaved(d)
       setDraft(d)
+      setTextLength(editor.getText().length)
     }, onError)
-  }, [memoId, onError])
+  }, [memoId, editor, onError])
 
-  // 새 메모인데 섹션 목록이 늦게 오면, 고른 섹션이 없을 때 기본 섹션을 써요.
-  const sectionId = draft.sectionId ?? initialSectionId
-
-  const dirty = draft.title !== saved.title || draft.content !== saved.content || draft.sectionId !== saved.sectionId
+  const dirty = draft.title !== saved.title || draft.html !== saved.html
   useEffect(() => { onDirtyChange(dirty) }, [dirty, onDirtyChange])
 
   // 저장하지 않은 채로 탭을 닫으면 브라우저가 한 번 물어봐요.
@@ -51,13 +135,17 @@ export default function MemoEditor({ memoId, tree, initialSectionId, onDirtyChan
   }, [dirty])
 
   async function save() {
-    if (sectionId === undefined || busy) return
+    const sectionId = memo?.sectionId ?? initialSectionId
+    if (sectionId === undefined || busy || !editor) return
+    if (uploading > 0) { setStatus('그림을 다 올린 뒤에 저장해 주세요.'); return }
     setBusy(true)
     setStatus('저장하는 중')
     try {
-      const body = { title: draft.title, content: draft.content, sectionId }
+      const html = editor.getHTML()
+      const body = { title: draft.title, contentHtml: html, sectionId }
       const result = memo ? await api.updateMemo(memo.id, body) : await api.createMemo(body)
-      const d = { title: result.title, content: result.content, sectionId: result.sectionId }
+      // 지금 편집기 값을 기준으로 둬요. 서버가 정리한 HTML과 모양이 조금 달라도 "저장 안 됨"이 뜨지 않게요.
+      const d = { title: result.title, html }
       setMemo(result)
       setSaved(d)
       setDraft(d)
@@ -89,7 +177,7 @@ export default function MemoEditor({ memoId, tree, initialSectionId, onDirtyChan
     }
   }
 
-  if (memoId !== null && !memo) return <p className="pane__loading" role="status">메모를 불러오는 중</p>
+  const loading = memoId !== null && !memo
 
   return (
     <form
@@ -99,33 +187,32 @@ export default function MemoEditor({ memoId, tree, initialSectionId, onDirtyChan
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); save() }
       }}
     >
-      <div className="editor__bar">
+      {loading && <p className="pane__loading" role="status">메모를 불러오는 중</p>}
+      <div className="editor__bar" hidden={loading}>
         <button type="button" className="textbtn editor__back" onClick={onClose}>← 목록으로</button>
-        <label className="sr-only" htmlFor="memo-section">섹션</label>
-        <select id="memo-section" value={sectionId ?? ''}
-                onChange={e => setDraft({ ...draft, sectionId: Number(e.target.value) })}>
-          <SectionOptions tree={tree} />
-        </select>
         <span className="editor__state" aria-live="polite">{dirty ? '저장 안 됨' : memo ? '저장됨' : ''}</span>
       </div>
 
       <label className="sr-only" htmlFor="memo-title">제목</label>
-      <input id="memo-title" className="editor__title" value={draft.title} maxLength={100}
+      <input id="memo-title" className="editor__title" value={draft.title} maxLength={100} hidden={loading}
              placeholder="제목 없음" onChange={e => setDraft({ ...draft, title: e.target.value })} />
 
-      <label className="sr-only" htmlFor="memo-content">본문</label>
-      <textarea id="memo-content" className="editor__content" value={draft.content} maxLength={MAX_CONTENT}
-                placeholder="여기에 메모를 적어요" aria-describedby="memo-count"
-                onChange={e => setDraft({ ...draft, content: e.target.value })} />
+      {/* 편집기는 불러오는 동안에도 있어야 본문을 넣을 수 있어서, 감추기만 해요. */}
+      <EditorContent editor={editor} className="editor__body" hidden={loading} />
 
-      <div className="editor__foot">
+      <div className="editor__foot" hidden={loading}>
         <p className="editor__meta">
-          {memo && <>작성 {timeFmt.format(new Date(memo.createdAt))} · 수정 {timeFmt.format(new Date(memo.updatedAt))} · </>}
-          <span id="memo-count">{draft.content.length.toLocaleString('ko-KR')} / 20,000자</span>
+          {memo && <>
+            <span>작성 {timeFmt.format(new Date(memo.createdAt))}</span>
+            <span>수정 {timeFmt.format(new Date(memo.updatedAt))}</span>
+          </>}
+          <span id="memo-count" data-over={textLength > MAX_CONTENT || undefined}>
+            {textLength.toLocaleString('ko-KR')} / 20,000자
+          </span>
         </p>
         <div className="btn-row">
           {memo && <button type="button" className="textbtn textbtn--danger" onClick={remove}>메모 지우기</button>}
-          <button type="submit" className="btn btn--primary" disabled={busy || (!dirty && !!memo)}>메모 저장하기</button>
+          <button type="submit" className="btn btn--primary" disabled={busy || uploading > 0 || (!dirty && !!memo)}>메모 저장하기</button>
         </div>
       </div>
       <p className="status" role="status">{status}</p>

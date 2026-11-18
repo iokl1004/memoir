@@ -37,8 +37,13 @@ public class Memo {
     @Column(nullable = false, length = 100)
     private String title;
 
+    /** 본문에서 글자만 뽑은 것. 검색과 목록 미리보기에 써요. */
     @Column(nullable = false, columnDefinition = "MEDIUMTEXT")
     private String content;
+
+    /** 편집기의 본문(글자와 그림). 그림 기능 전에 쓴 메모는 null이에요. */
+    @Column(columnDefinition = "MEDIUMTEXT")
+    private String contentHtml;
 
     @Column(nullable = false)
     private LocalDateTime createdAt;
@@ -49,19 +54,21 @@ public class Memo {
     protected Memo() {
     }
 
-    public Memo(User user, Section section, long position, String title, String content) {
+    public Memo(User user, Section section, long position, String title, String content, String contentHtml) {
         this.user = user;
         this.section = section;
         this.position = position;
         this.title = title;
         this.content = content;
+        this.contentHtml = contentHtml;
         this.createdAt = LocalDateTime.now();
         this.updatedAt = this.createdAt;
     }
 
-    public void update(String title, String content, Section section) {
+    public void update(String title, String content, String contentHtml, Section section) {
         this.title = title;
         this.content = content;
+        this.contentHtml = contentHtml;
         this.section = section;
         this.updatedAt = LocalDateTime.now();
     }
@@ -89,6 +96,10 @@ public class Memo {
 
     public String getContent() {
         return content;
+    }
+
+    public String getContentHtml() {
+        return contentHtml;
     }
 
     public LocalDateTime getCreatedAt() {

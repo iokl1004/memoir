@@ -106,7 +106,7 @@ class SectionControllerTest {
     }
 
     @Test
-    void 섹션을_지우면_안의_메모는_미분류로_옮겨진다() throws Exception {
+    void 섹션을_지우면_안의_메모도_지워진다() throws Exception {
         long id = idOf(create("업무"));
         long userId = jdbc.queryForObject("SELECT user_id FROM sections WHERE id = ?", Long.class, id);
         insertMemo(userId, id, "회의록");
@@ -116,9 +116,7 @@ class SectionControllerTest {
                 .andExpect(status().isNoContent());
 
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sections WHERE id = ?", Integer.class, id)).isZero();
-        assertThat(jdbc.queryForList("SELECT section_id FROM memos WHERE user_id = ?", Long.class, userId))
-                .hasSize(2)
-                .containsOnly(defaultSectionId());
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM memos WHERE user_id = ?", Integer.class, userId)).isZero();
     }
 
     @Test

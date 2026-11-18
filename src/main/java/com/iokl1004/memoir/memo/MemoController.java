@@ -8,6 +8,7 @@ import com.iokl1004.memoir.memo.MemoDtos.MemoUpdateRequest;
 import com.iokl1004.memoir.memo.MemoDtos.MemoMoveRequest;
 import com.iokl1004.memoir.memo.search.MemoSort;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -47,8 +48,10 @@ public class MemoController {
                            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
                            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
                            @RequestParam(defaultValue = "CREATED_DESC") MemoSort sort,
-                           @RequestParam(defaultValue = "0") @Min(0) int page) {
-        return memoService.search(user.id(), sectionId, q, from, to, sort, page, PAGE_SIZE);
+                           @RequestParam(defaultValue = "0") @Min(0) int page,
+                           // 검색창 미리보기는 10건씩 가져가요. 목록은 기본 20건이에요.
+                           @RequestParam(defaultValue = "" + PAGE_SIZE) @Min(1) @Max(50) int size) {
+        return memoService.search(user.id(), sectionId, q, from, to, sort, page, size);
     }
 
     /** 사용자 지정 순서에서 메모를 끌어 놓은 자리로 옮겨요. */

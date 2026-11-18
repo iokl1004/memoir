@@ -11,6 +11,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -22,6 +23,8 @@ import java.util.stream.Collectors;
 
 @Service
 public class SectionService {
+
+    static final long POSITION_GAP = 1024;
 
     private final SectionRepository sections;
     private final UserRepository users;
@@ -35,9 +38,9 @@ public class SectionService {
     public List<SectionListItem> list(Long userId) {
         Map<Long, Long> counts = sections.countMemosBySection(userId).stream()
                 .collect(Collectors.toMap(SectionMemoCount::getSectionId, SectionMemoCount::getMemoCount));
-        return sections.findByUserIdOrderByDefaultSectionDescCreatedAtAscIdAsc(userId).stream()
+        return sections.findByUserIdOrderByDefaultSectionDescPositionAscIdAsc(userId).stream()
                 .map(s -> new SectionListItem(s.getId(), s.getParentId(), s.getName(), s.isDefaultSection(),
-                        counts.getOrDefault(s.getId(), 0L)))
+                        counts.getOrDefault(s.getId(), 0L), s.getCreatedAt()))
                 .toList();
     }
 
@@ -47,8 +50,11 @@ public class SectionService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "미분류 안에는 섹션을 만들 수 없어요.");
         }
         requireUniqueName(userId, parentId, name);
+        // 새 섹션은 같은 상위 섹션 안에서 맨 아래에 와요.
+        Section section = Section.of(users.getReferenceById(userId), parentId, name);
+        section.setPosition(sections.maxSiblingPosition(userId, parentId) + POSITION_GAP);
         try {
-            return sections.saveAndFlush(Section.of(users.getReferenceById(userId), parentId, name));
+            return sections.saveAndFlush(section);
         } catch (DataIntegrityViolationException e) {
             // 같은 이름으로 동시에 요청하면 위 검사를 둘 다 통과할 수 있어서, DB 유니크 제약으로 한 번 더 막아요.
             throw duplicateName();
@@ -73,18 +79,16 @@ public class SectionService {
     }
 
     /**
-     * 섹션과 그 아래 모든 하위 섹션을 지워요. 안에 있던 메모는 모두 미분류로 옮겨요.
-     * 메모 이동과 섹션 삭제는 둘 다 성공하거나 둘 다 취소돼요.
+     * 섹션과 그 아래 모든 하위 섹션을 지워요. 안에 있던 메모도 모두 지워요.
+     * 메모 삭제와 섹션 삭제는 둘 다 성공하거나 둘 다 취소돼요.
      */
     @Transactional
     public void delete(Long userId, Long sectionId) {
         Section section = findOwned(userId, sectionId);
         requireNotDefault(section);
-        Section defaultSection = sections.findByUserIdAndDefaultSectionTrue(userId)
-                .orElseThrow(() -> new IllegalStateException("미분류 섹션이 없는 사용자: " + userId));
 
         List<Long> subtree = new ArrayList<>(subtree(sections.findByUserId(userId), section.getId()));
-        sections.moveMemos(userId, subtree, defaultSection.getId());
+        sections.deleteMemos(userId, subtree);
         // 부모를 가리키는 FK 때문에 가장 깊은 섹션부터 지워요. (subtree는 위에서 아래 순서)
         for (Long id : subtree.reversed()) {
             sections.deleteById(id);
@@ -93,33 +97,62 @@ public class SectionService {
 
     /**
      * 섹션을 다른 섹션 안으로(newParentId), 또는 최상위로(null) 옮겨요. 하위 섹션과 메모는 함께 따라가요.
+     * beforeId를 주면 옮길 곳에서 그 섹션 바로 위에, 없으면 맨 아래에 놓아요. 같은 상위 안에서 순서만 바꿀 때도 써요.
      * 자기 자신이나 자기 하위 섹션 안으로는 옮길 수 없어요(순환). 옮길 곳에 같은 이름이 있으면 409예요.
      */
     @Transactional
-    public Section move(Long userId, Long sectionId, Long newParentId) {
+    public Section move(Long userId, Long sectionId, Long newParentId, Long beforeId) {
         Section section = findOwned(userId, sectionId);
         if (section.isDefaultSection()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "미분류 섹션은 옮길 수 없어요.");
         }
-        if (Objects.equals(section.getParentId(), newParentId)) {
-            return section;
-        }
-        if (newParentId != null) {
+        List<Section> all = sections.findByUserId(userId);
+        boolean parentChanges = !Objects.equals(section.getParentId(), newParentId);
+        if (parentChanges && newParentId != null) {
             if (findOwned(userId, newParentId).isDefaultSection()) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "미분류 안에는 섹션을 넣을 수 없어요.");
             }
-            if (subtree(sections.findByUserId(userId), sectionId).contains(newParentId)) {
+            if (subtree(all, sectionId).contains(newParentId)) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "자기 자신이나 하위 섹션 안으로는 옮길 수 없어요.");
             }
         }
-        requireUniqueName(userId, newParentId, section.getName());
-        section.moveTo(newParentId);
+
+        // 옮길 곳의 형제 섹션들 사이에 끼워 넣고, 형제 순서를 1024 간격으로 다시 매겨요. (형제는 많지 않아요)
+        List<Section> siblings = new ArrayList<>(all.stream()
+                .filter(s -> Objects.equals(s.getParentId(), newParentId) && !s.getId().equals(sectionId))
+                .sorted(Comparator.comparingLong(Section::getPosition).thenComparing(Section::getId))
+                .toList());
+        int index = siblings.size();
+        if (beforeId != null) {
+            index = indexOf(siblings, beforeId);
+            if (index < 0) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "옮길 곳에 그 섹션이 없어요.");
+            }
+        }
+        siblings.add(index, section);
+        for (int i = 0; i < siblings.size(); i++) {
+            siblings.get(i).setPosition((i + 1) * POSITION_GAP);
+        }
+
+        if (parentChanges) {
+            requireUniqueName(userId, newParentId, section.getName());
+            section.moveTo(newParentId);
+        }
         try {
             sections.flush();
         } catch (DataIntegrityViolationException e) {
             throw duplicateName();
         }
         return section;
+    }
+
+    private static int indexOf(List<Section> list, Long id) {
+        for (int i = 0; i < list.size(); i++) {
+            if (list.get(i).getId().equals(id)) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     /** 위에서 아래로(BFS) 내려가며 모은 id. root가 목록에 없으면 빈 집합 */

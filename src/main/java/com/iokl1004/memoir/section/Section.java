@@ -37,6 +37,10 @@ public class Section {
     @Column(name = "is_default", nullable = false)
     private boolean defaultSection;
 
+    /** 같은 상위 섹션 안에서의 순서. 작을수록 위예요. */
+    @Column(nullable = false)
+    private long position;
+
     @Column(nullable = false)
     private LocalDateTime createdAt;
 
@@ -68,6 +72,18 @@ public class Section {
     /** 다른 섹션 안으로 옮겨요. null이면 최상위 */
     public void moveTo(Long parentId) {
         this.parentId = parentId;
+    }
+
+    public void setPosition(long position) {
+        this.position = position;
+    }
+
+    public long getPosition() {
+        return position;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
     }
 
     public Long getId() {

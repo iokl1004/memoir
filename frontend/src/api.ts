@@ -1,15 +1,25 @@
 export type User = { id: number; email: string }
 /** memoCount는 이 섹션에 바로 쓴 메모 수예요. 하위까지 합친 수는 sectionTree.ts가 계산해요. */
-export type Section = { id: number; parentId: number | null; name: string; isDefault: boolean; memoCount: number }
+export type Section = {
+  id: number
+  parentId: number | null
+  name: string
+  isDefault: boolean
+  memoCount: number
+  createdAt: string
+}
 export type Memo = {
   id: number
   sectionId: number
   title: string
+  /** 본문의 글자만 (검색·미리보기용) */
   content: string
+  /** 편집기 본문(글자와 그림). 그림 기능 전에 쓴 메모는 null이라 content를 문단으로 바꿔 보여줘요. */
+  contentHtml: string | null
   createdAt: string
   updatedAt: string
 }
-export type MemoSummary = Omit<Memo, 'content'> & { preview: string }
+export type MemoSummary = Omit<Memo, 'content' | 'contentHtml'> & { preview: string }
 /** totalCapped이면 total은 "이 수 이상"이에요. */
 export type MemoPage = { items: MemoSummary[]; page: number; total: number; totalCapped: boolean; hasNext: boolean }
 export type MemoSort = 'CREATED_DESC' | 'CREATED_ASC' | 'UPDATED_DESC' | 'UPDATED_ASC' | 'TITLE_ASC' | 'TITLE_DESC' | 'CUSTOM'
@@ -29,15 +39,17 @@ function xsrfToken(): string {
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const form = body instanceof FormData
   const res = await fetch(path, {
     method,
     credentials: 'same-origin',
     headers: {
-      ...(body !== undefined && { 'Content-Type': 'application/json' }),
+      // FormData는 브라우저가 경계값을 붙인 Content-Type을 직접 정해요.
+      ...(body !== undefined && !form && { 'Content-Type': 'application/json' }),
       // 세션 쿠키 방식이라 CSRF 토큰을 헤더로 같이 보내야 POST, PATCH, PUT, DELETE가 통과해요.
       'X-XSRF-TOKEN': decodeURIComponent(xsrfToken()),
     },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body: body === undefined ? undefined : form ? body : JSON.stringify(body),
   })
   if (res.status === 204) return undefined as T
   const data = await res.json().catch(() => null)
@@ -73,17 +85,25 @@ export const api = {
   createSection: (name: string, parentId: number | null) => request<Section>('POST', '/api/sections', { name, parentId }),
   renameSection: (id: number, name: string) => request<Section>('PATCH', `/api/sections/${id}`, { name }),
   deleteSection: (id: number) => request<void>('DELETE', `/api/sections/${id}`),
-  /** parentId가 null이면 최상위로 옮겨요. 하위 섹션과 메모는 함께 따라가요. */
-  moveSection: (id: number, parentId: number | null) =>
-    request<Section>('PUT', `/api/sections/${id}/parent`, { parentId }),
+  /** parentId가 null이면 최상위, beforeId가 null이면 그 안의 맨 아래로 옮겨요. 하위 섹션과 메모는 함께 따라가요. */
+  moveSection: (id: number, parentId: number | null, beforeId: number | null = null) =>
+    request<Section>('PUT', `/api/sections/${id}/parent`, { parentId, beforeId }),
 
-  memos: (filter: MemoFilter, sort: MemoSort, page: number) =>
-    request<MemoPage>('GET', `/api/memos?${query({ ...filter, sort, page })}`),
+  memos: (filter: MemoFilter, sort: MemoSort, page: number, size?: number) =>
+    request<MemoPage>('GET', `/api/memos?${query({ ...filter, sort, page, size })}`),
   memo: (id: number) => request<Memo>('GET', `/api/memos/${id}`),
-  createMemo: (m: { sectionId: number; title: string; content: string }) => request<Memo>('POST', '/api/memos', m),
-  updateMemo: (id: number, m: { sectionId: number; title: string; content: string }) =>
+  createMemo: (m: { sectionId: number; title: string; contentHtml: string }) => request<Memo>('POST', '/api/memos', m),
+  updateMemo: (id: number, m: { sectionId: number; title: string; contentHtml: string }) =>
     request<Memo>('PATCH', `/api/memos/${id}`, m),
   deleteMemo: (id: number) => request<void>('DELETE', `/api/memos/${id}`),
+  /** 본문에 붙여넣은 그림을 올려요. 돌려받은 url을 <img src>에 넣어요. */
+  uploadImage: (file: Blob) => {
+    const form = new FormData()
+    form.append('file', file, 'image')
+    return request<{ id: number; url: string }>('POST', '/api/images', form)
+  },
+  /** 메모를 다른 섹션으로 옮겨요. 편집기에서 섹션을 바꾸는 것과 같은 PATCH라서 수정일도 바뀌어요. */
+  moveMemoToSection: (id: number, sectionId: number) => request<Memo>('PATCH', `/api/memos/${id}`, { sectionId }),
   /** 끌어 놓은 자리의 위(afterId)와 아래(beforeId) 메모 */
   moveMemo: (id: number, afterId: number | null, beforeId: number | null) =>
     request<void>('PUT', `/api/memos/${id}/position`, { afterId, beforeId }),

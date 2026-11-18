@@ -5,6 +5,7 @@ import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.test.web.servlet.request.AbstractMockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import java.util.List;
@@ -40,7 +41,7 @@ public final class Api {
         return new Api(mvc, session);
     }
 
-    public ResultActions perform(MockHttpServletRequestBuilder request) throws Exception {
+    public ResultActions perform(AbstractMockHttpServletRequestBuilder<?> request) throws Exception {
         return mvc.perform(request.session(session).with(csrf()));
     }
 

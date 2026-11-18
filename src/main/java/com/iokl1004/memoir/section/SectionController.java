@@ -54,7 +54,7 @@ public class SectionController {
     @PutMapping("/{id}/parent")
     public SectionResponse move(@AuthenticationPrincipal LoginUser user, @PathVariable Long id,
                                 @RequestBody SectionMoveRequest request) {
-        return SectionResponse.from(sectionService.move(user.id(), id, request.parentId()));
+        return SectionResponse.from(sectionService.move(user.id(), id, request.parentId(), request.beforeId()));
     }
 
     @DeleteMapping("/{id}")

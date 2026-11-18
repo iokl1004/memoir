@@ -164,6 +164,19 @@ class MemoControllerTest {
     }
 
     @Test
+    void 한_번에_가져올_개수를_정할_수_있고_50건이_한도다() throws Exception {
+        for (int i = 1; i <= 3; i++) {
+            createMemo(null, "회의 " + i, "").andExpect(status().isCreated());
+        }
+
+        search("q=회의&size=2").andExpect(jsonPath("$.items.length()").value(2))
+                .andExpect(jsonPath("$.hasNext").value(true));
+        search("q=회의&size=2&page=1").andExpect(jsonPath("$.items.length()").value(1))
+                .andExpect(jsonPath("$.hasNext").value(false));
+        search("size=51").andExpect(status().isBadRequest());
+    }
+
+    @Test
     void 작성일_기간으로_거르고_양_끝_날짜를_포함한다() throws Exception {
         setCreatedAt(idOf(createMemo(null, "2월 메모", ""), "$.id"), "2026-02-28 23:59:59");
         setCreatedAt(idOf(createMemo(null, "3월 첫날", ""), "$.id"), "2026-03-01 00:00:00");
@@ -186,14 +199,14 @@ class MemoControllerTest {
     }
 
     @Test
-    void 섹션을_지우면_메모가_미분류로_옮겨진다() throws Exception {
+    void 섹션을_지우면_안의_메모도_지워진다() throws Exception {
         long work = createSection("업무");
         long memoId = idOf(createMemo(work, "회의록", ""), "$.id");
 
         mvc.perform(delete("/api/sections/{id}", work).session(session).with(csrf()))
                 .andExpect(status().isNoContent());
         mvc.perform(get("/api/memos/{id}", memoId).session(session))
-                .andExpect(jsonPath("$.sectionId").value(defaultSectionId));
+                .andExpect(status().isNotFound());
     }
 
     @Test

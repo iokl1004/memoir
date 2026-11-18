@@ -154,20 +154,64 @@ class NestedSectionTest {
         return parents.getFirst();
     }
 
+    // ---------- 섹션 순서 ----------
+
     @Test
-    void 상위_섹션을_지우면_하위_섹션도_지워지고_메모는_모두_미분류로_간다() throws Exception {
+    void 새_섹션은_같은_상위_안에서_맨_아래에_온다() throws Exception {
+        api.createSection("C프로젝트", companyA);
+        assertThat(childrenOf(companyA)).containsExactly("A프로젝트", "B프로젝트", "C프로젝트");
+    }
+
+    @Test
+    void 같은_상위_안에서_순서를_바꿀_수_있다() throws Exception {
+        api.createSection("C프로젝트", companyA);
+        moveTo(projectB, companyA, projectA).andExpect(status().isOk());       // B를 A 위로
+        assertThat(childrenOf(companyA)).containsExactly("B프로젝트", "A프로젝트", "C프로젝트");
+
+        moveTo(projectB, companyA, null).andExpect(status().isOk());           // B를 맨 아래로
+        assertThat(childrenOf(companyA)).containsExactly("A프로젝트", "C프로젝트", "B프로젝트");
+    }
+
+    @Test
+    void 다른_상위로_옮기면서_자리를_정할_수_있다() throws Exception {
+        long companyB = api.createSection("B회사", null);
+        api.createSection("X", companyB);
+        long y = api.createSection("Y", companyB);
+
+        moveTo(projectA, companyB, y).andExpect(status().isOk());
+        assertThat(childrenOf(companyB)).containsExactly("X", "A프로젝트", "Y");
+        assertThat(childrenOf(companyA)).containsExactly("B프로젝트");
+        assertThat(parentOf(deep)).isEqualTo((int) projectA);
+    }
+
+    @Test
+    void 기준_섹션이_옮길_곳의_형제가_아니면_400() throws Exception {
+        moveTo(projectB, companyA, deep).andExpect(status().isBadRequest());
+        assertThat(childrenOf(companyA)).containsExactly("A프로젝트", "B프로젝트");
+    }
+
+    private org.springframework.test.web.servlet.ResultActions moveTo(long id, Long parentId, Long beforeId) throws Exception {
+        return api.json(put("/api/sections/{id}/parent", id), "{\"parentId\": %s, \"beforeId\": %s}".formatted(parentId, beforeId));
+    }
+
+    private List<String> childrenOf(long parentId) throws Exception {
+        return JsonPath.read(api.body(get("/api/sections")), "$[?(@.parentId == %d)].name".formatted(parentId));
+    }
+
+    @Test
+    void 상위_섹션을_지우면_하위_섹션과_그_안의_메모가_모두_지워진다() throws Exception {
         long m1 = api.createMemo(companyA, "회사 공지");
         long m2 = api.createMemo(deep, "회고 초안");
         long keep = api.createSection("다른 회사", null);
+        long kept = api.createMemo(keep, "남는 메모");
 
         api.perform(delete("/api/sections/{id}", companyA)).andExpect(status().isNoContent());
 
         String sections = api.body(get("/api/sections"));
         assertThat(JsonPath.<List<String>>read(sections, "$[*].name")).containsExactly("미분류", "다른 회사");
-        long defaultId = ((Number) JsonPath.read(sections, "$[0].id")).longValue();
         for (long memoId : new long[]{m1, m2}) {
-            api.perform(get("/api/memos/{id}", memoId)).andExpect(jsonPath("$.sectionId").value(defaultId));
+            api.perform(get("/api/memos/{id}", memoId)).andExpect(status().isNotFound());
         }
-        assertThat(keep).isPositive();
+        api.perform(get("/api/memos/{id}", kept)).andExpect(status().isOk());
     }
 }

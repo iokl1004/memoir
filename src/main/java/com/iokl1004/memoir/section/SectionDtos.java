@@ -3,6 +3,8 @@ package com.iokl1004.memoir.section;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
+import java.time.LocalDateTime;
+
 final class SectionDtos {
 
     private SectionDtos() {
@@ -23,8 +25,8 @@ final class SectionDtos {
         }
     }
 
-    /** 옮길 곳의 상위 섹션. null이면 최상위로 옮겨요. */
-    record SectionMoveRequest(Long parentId) {
+    /** 옮길 곳의 상위 섹션(null이면 최상위)과, 그 안에서 바로 아래에 올 섹션(null이면 맨 아래) */
+    record SectionMoveRequest(Long parentId, Long beforeId) {
     }
 
     record SectionResponse(Long id, Long parentId, String name, boolean isDefault) {
@@ -35,6 +37,7 @@ final class SectionDtos {
     }
 
     /** memoCount는 이 섹션에 바로 쓴 메모 수예요. 하위 섹션까지 합친 수는 화면에서 트리로 더해요. */
-    record SectionListItem(Long id, Long parentId, String name, boolean isDefault, long memoCount) {
+    record SectionListItem(Long id, Long parentId, String name, boolean isDefault, long memoCount,
+                           LocalDateTime createdAt) {
     }
 }

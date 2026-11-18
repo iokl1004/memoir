@@ -11,6 +11,7 @@ import com.iokl1004.memoir.memo.search.MemoSort;
 import com.iokl1004.memoir.section.Section;
 import com.iokl1004.memoir.section.SectionRepository;
 import org.springframework.http.HttpStatus;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -27,8 +28,11 @@ public class MemoService {
     private final SectionRepository sections;
     private final UserRepository users;
     private final MemoSearcher searcher;
+    private final JdbcClient jdbc;
 
-    public MemoService(MemoRepository memos, SectionRepository sections, UserRepository users, MemoSearcher searcher) {
+    public MemoService(MemoRepository memos, SectionRepository sections, UserRepository users, MemoSearcher searcher,
+                       JdbcClient jdbc) {
+        this.jdbc = jdbc;
         this.memos = memos;
         this.sections = sections;
         this.users = users;
@@ -40,7 +44,9 @@ public class MemoService {
         Section section = request.sectionId() == null ? defaultSection(userId) : ownedSection(userId, request.sectionId());
         // 새 메모는 사용자가 정한 순서에서도 맨 위에 와요.
         long position = memos.minPosition(userId) - POSITION_GAP;
-        Memo memo = memos.save(new Memo(users.getReferenceById(userId), section, position, request.title(), request.content()));
+        Body body = body(request.contentHtml(), request.content() == null ? "" : request.content());
+        Memo memo = memos.save(new Memo(users.getReferenceById(userId), section, position, request.title(), body.text, body.html));
+        attachImages(userId, memo.getId(), body.imageIds);
         return MemoResponse.from(memo);
     }
 
@@ -52,10 +58,13 @@ public class MemoService {
     @Transactional
     public MemoResponse update(Long userId, Long memoId, MemoUpdateRequest request) {
         Memo memo = ownedMemo(userId, memoId);
+        boolean newBody = request.contentHtml() != null || request.content() != null;
+        Body body = newBody ? body(request.contentHtml(), request.content()) : new Body(memo.getContent(), memo.getContentHtml(), Set.of());
         memo.update(
                 request.title() != null ? request.title() : memo.getTitle(),
-                request.content() != null ? request.content() : memo.getContent(),
+                body.text, body.html,
                 request.sectionId() != null ? ownedSection(userId, request.sectionId()) : memo.getSection());
+        attachImages(userId, memo.getId(), body.imageIds);
         return MemoResponse.from(memo);
     }
 
@@ -112,6 +121,33 @@ public class MemoService {
         Set<Long> sectionIds = sectionId == null ? null : Set.of(sectionId);
         return MemoPage.from(searcher.search(new MemoSearchCondition(
                 userId, sectionIds, MemoSearchCondition.splitTerms(q), from, to, sort, page, size)), page);
+    }
+
+    private record Body(String text, String html, Set<Long> imageIds) {
+    }
+
+    /** 본문을 정해요. HTML이 오면 정리하고 글자를 뽑아요. 글자만 오면 HTML은 비워 둬요. */
+    private static Body body(String html, String text) {
+        if (html == null) {
+            return new Body(text, null, Set.of());
+        }
+        MemoHtml.Cleaned cleaned = MemoHtml.clean(html);
+        if (cleaned.text().length() > MemoDtos.MAX_CONTENT) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "본문은 20,000자까지 쓸 수 있어요.");
+        }
+        return new Body(cleaned.text(), cleaned.html(), cleaned.imageIds());
+    }
+
+    /** 본문에 들어간 내 그림을 이 메모에 묶어요. 메모가 지워지면 DB가 그림도 함께 지워요. */
+    private void attachImages(Long userId, Long memoId, Set<Long> imageIds) {
+        if (imageIds.isEmpty()) {
+            return;
+        }
+        jdbc.sql("UPDATE memo_images SET memo_id = :memoId WHERE user_id = :userId AND memo_id IS NULL AND id IN (:ids)")
+                .param("memoId", memoId)
+                .param("userId", userId)
+                .param("ids", imageIds)
+                .update();
     }
 
     private Memo ownedMemo(Long userId, Long memoId) {

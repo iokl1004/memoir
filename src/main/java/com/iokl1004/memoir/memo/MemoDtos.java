@@ -1,7 +1,6 @@
 package com.iokl1004.memoir.memo;
 
 import com.iokl1004.memoir.memo.search.MemoSearchResult;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 import java.time.LocalDateTime;
@@ -11,14 +10,22 @@ final class MemoDtos {
 
     static final String UNTITLED = "제목 없음";
     private static final int PREVIEW_LENGTH = 100;
+    /** 본문 글자 수 제한 */
+    static final int MAX_CONTENT = 20_000;
+    /** HTML은 태그가 붙어서 길어져요. 그림은 주소만 들어가요. */
+    static final int MAX_HTML = 200_000;
 
     private MemoDtos() {
     }
 
-    /** sectionId가 없으면 미분류에 저장해요. 제목이 비어 있으면 "제목 없음"으로 저장해요. */
+    /**
+     * sectionId가 없으면 미분류에 저장해요. 제목이 비어 있으면 "제목 없음"으로 저장해요.
+     * 본문은 contentHtml(글자와 그림)이나 content(글자만) 중 하나로 보내요. 둘 다 오면 contentHtml을 써요.
+     */
     record MemoCreateRequest(Long sectionId,
                              @Size(max = 100) String title,
-                             @NotNull @Size(max = 20_000) String content) {
+                             @Size(max = MAX_CONTENT) String content,
+                             @Size(max = MAX_HTML) String contentHtml) {
 
         MemoCreateRequest {
             title = normalizeTitle(title);
@@ -28,19 +35,20 @@ final class MemoDtos {
     /** 보낸 항목만 바꿔요. null인 항목은 그대로 둬요. */
     record MemoUpdateRequest(Long sectionId,
                              @Size(max = 100) String title,
-                             @Size(max = 20_000) String content) {
+                             @Size(max = MAX_CONTENT) String content,
+                             @Size(max = MAX_HTML) String contentHtml) {
 
         MemoUpdateRequest {
             title = title == null ? null : normalizeTitle(title);
         }
     }
 
-    record MemoResponse(Long id, Long sectionId, String title, String content,
+    record MemoResponse(Long id, Long sectionId, String title, String content, String contentHtml,
                         LocalDateTime createdAt, LocalDateTime updatedAt) {
 
         static MemoResponse from(Memo memo) {
             return new MemoResponse(memo.getId(), memo.getSection().getId(), memo.getTitle(), memo.getContent(),
-                    memo.getCreatedAt(), memo.getUpdatedAt());
+                    memo.getContentHtml(), memo.getCreatedAt(), memo.getUpdatedAt());
         }
     }
 

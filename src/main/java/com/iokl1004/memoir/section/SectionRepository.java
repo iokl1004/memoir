@@ -13,8 +13,13 @@ public interface SectionRepository extends JpaRepository<Section, Long> {
 
     List<Section> findByUserId(Long userId);
 
-    /** 미분류가 맨 위, 나머지는 만든 순서대로 */
-    List<Section> findByUserIdOrderByDefaultSectionDescCreatedAtAscIdAsc(Long userId);
+    /** 미분류가 맨 위, 나머지는 사용자가 정한 순서(같은 상위 안에서) */
+    List<Section> findByUserIdOrderByDefaultSectionDescPositionAscIdAsc(Long userId);
+
+    /** 같은 상위 섹션 안에서 가장 큰 순서 값. 새 섹션을 맨 아래에 두려고 써요. */
+    @Query("SELECT COALESCE(MAX(s.position), 0) FROM Section s WHERE s.user.id = :userId "
+            + "AND COALESCE(s.parentId, 0) = COALESCE(:parentId, 0)")
+    long maxSiblingPosition(@Param("userId") Long userId, @Param("parentId") Long parentId);
 
     Optional<Section> findByIdAndUserId(Long id, Long userId);
 
@@ -26,11 +31,8 @@ public interface SectionRepository extends JpaRepository<Section, Long> {
     boolean existsSibling(@Param("userId") Long userId, @Param("parentId") Long parentId, @Param("name") String name);
 
     @Modifying(flushAutomatically = true, clearAutomatically = true)
-    @Query("UPDATE Memo m SET m.section.id = :toSectionId "
-            + "WHERE m.section.id IN :fromSectionIds AND m.user.id = :userId")
-    int moveMemos(@Param("userId") Long userId,
-                  @Param("fromSectionIds") Collection<Long> fromSectionIds,
-                  @Param("toSectionId") Long toSectionId);
+    @Query("DELETE FROM Memo m WHERE m.section.id IN :sectionIds AND m.user.id = :userId")
+    int deleteMemos(@Param("userId") Long userId, @Param("sectionIds") Collection<Long> sectionIds);
 
     /** 섹션별 메모 개수. 메모가 없는 섹션은 결과에 없어요. */
     @Query("SELECT m.section.id AS sectionId, COUNT(m) AS memoCount FROM Memo m "

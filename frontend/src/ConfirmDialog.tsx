@@ -37,7 +37,16 @@ export default function ConfirmProvider({ children }: { children: ReactNode }) {
         >
           <h2 id="dialog-title" className="dialog__title">{pending.title}</h2>
           {pending.body && <p id="dialog-body" className="dialog__body">{pending.body}</p>}
-          <div className="btn-row dialog__actions">
+          <div className="btn-row dialog__actions"
+               onKeyDown={e => {
+                 // ←→ 로도 [취소]와 [확인] 사이를 오가요. (Tab과 같은 순서, 끝에서 반대쪽으로 돌아가요)
+                 if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+                 const buttons = [...e.currentTarget.querySelectorAll('button')]
+                 const i = buttons.indexOf(document.activeElement as HTMLButtonElement)
+                 if (i < 0) return
+                 e.preventDefault()
+                 buttons[(i + (e.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length].focus()
+               }}>
             <button type="button" className="btn btn--secondary" autoFocus={pending.danger}
                     onClick={() => answer(false)}>
               {pending.cancelLabel ?? '취소'}

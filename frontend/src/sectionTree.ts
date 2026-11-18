@@ -11,13 +11,33 @@ export type SectionNode = Section & {
   path: string
 }
 
-/** 평평한 섹션 목록을 트리 순서(부모 다음에 자식)로 펼쳐요. 서버가 준 순서(미분류, 만든 순)를 형제 순서로 써요. */
-export function buildTree(sections: Section[]): SectionNode[] {
+export type SectionSortKey = 'NAME' | 'CREATED' | 'CUSTOM'
+export type SectionSort = { key: SectionSortKey; dir: 'ASC' | 'DESC' }
+
+// 메모 이름 정렬(MySQL utf8mb4_0900_ai_ci)과 같게 영문 다음에 한글이 오도록 기본(root) 순서를 써요.
+const nameCollator = new Intl.Collator('en', { numeric: true, sensitivity: 'base' })
+
+/** 형제 섹션의 순서. 미분류는 언제나 맨 위, 사용자 지정(CUSTOM)은 서버가 준 순서 그대로예요. */
+function compareSiblings(sort: SectionSort) {
+  const sign = sort.dir === 'ASC' ? 1 : -1
+  return (a: Section, b: Section, serverOrder: Map<number, number>) => {
+    if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1
+    if (sort.key === 'NAME') return sign * nameCollator.compare(a.name, b.name) || a.id - b.id
+    if (sort.key === 'CREATED') return sign * (a.createdAt.localeCompare(b.createdAt) || a.id - b.id)
+    return serverOrder.get(a.id)! - serverOrder.get(b.id)!
+  }
+}
+
+/** 평평한 섹션 목록을 트리 순서(부모 다음에 자식)로 펼쳐요. 형제끼리는 sort로 정렬해요. */
+export function buildTree(sections: Section[], sort: SectionSort = { key: 'CUSTOM', dir: 'ASC' }): SectionNode[] {
+  const serverOrder = new Map(sections.map((s, i) => [s.id, i]))
+  const compare = compareSiblings(sort)
   const children = new Map<number | null, Section[]>()
   for (const s of sections) {
     const key = s.parentId !== null && sections.some(p => p.id === s.parentId) ? s.parentId : null
     children.set(key, [...(children.get(key) ?? []), s])
   }
+  for (const list of children.values()) list.sort((a, b) => compare(a, b, serverOrder))
 
   const out: SectionNode[] = []
   function visit(s: Section, depth: number, parentPath: string): SectionNode {
