@@ -53,8 +53,11 @@ public class AuthController {
 
     @PostMapping("/signup")
     @ResponseStatus(HttpStatus.CREATED)
-    public MeResponse signup(@Valid @RequestBody SignupRequest request) {
+    public MeResponse signup(@Valid @RequestBody SignupRequest request, HttpServletRequest httpRequest) {
+        String ip = httpRequest.getRemoteAddr();
+        throttle.checkSignupCaptcha(ip, request.captchaToken());
         User user = authService.signup(request.email(), request.password());
+        throttle.recordSignup(ip);
         return new MeResponse(user.getId(), user.getEmail());
     }
 

@@ -28,7 +28,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest
+@SpringBootTest(properties = "memoir.signup.captcha-after=5")
 @AutoConfigureMockMvc
 @Import(TestcontainersConfiguration.class)
 class AccountSecurityTest {
@@ -109,6 +109,19 @@ class AccountSecurityTest {
         login("spray-" + UUID.randomUUID() + "@example.com", "wrong-pass", null).andExpect(status().isBadRequest());
     }
 
+    @Test
+    void 한_주소에서_가입이_많으면_그다음_가입부터_캡차를_요구한다() throws Exception {
+        for (int i = 0; i < 5; i++) signup();
+        String body = "{\"email\": \"many-%s@example.com\", \"password\": \"%s\", \"captchaToken\": %s}";
+        mvc.perform(post("/api/auth/signup").with(csrf()).with(r -> { r.setRemoteAddr(ip); return r; })
+                        .contentType(MediaType.APPLICATION_JSON).content(body.formatted(UUID.randomUUID(), PASSWORD, "null")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.captchaRequired").value(true));
+        mvc.perform(post("/api/auth/signup").with(csrf()).with(r -> { r.setRemoteAddr(ip); return r; })
+                        .contentType(MediaType.APPLICATION_JSON).content(body.formatted(UUID.randomUUID(), PASSWORD, "\"" + GOOD_TOKEN + "\"")))
+                .andExpect(status().isCreated());
+    }
+
     // ---------------------------------------------------------------- 패스워드 변경
 
     @Test
@@ -164,7 +177,8 @@ class AccountSecurityTest {
 
     private String signup() throws Exception {
         String email = "account-" + UUID.randomUUID() + "@example.com";
-        mvc.perform(post("/api/auth/signup").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+        mvc.perform(post("/api/auth/signup").with(csrf()).with(r -> { r.setRemoteAddr(ip); return r; })
+                        .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\": \"%s\", \"password\": \"%s\"}".formatted(email, PASSWORD)))
                 .andExpect(status().isCreated());
         return email;

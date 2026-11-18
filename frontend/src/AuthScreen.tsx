@@ -100,7 +100,7 @@ export default function AuthScreen({ onLogin, resetToken }: {
       setStatus(`확인할 칸이 ${Object.keys(next).length}개 있어요.`)
       return
     }
-    if (mode === 'login' && captcha.missing) {
+    if ((mode === 'login' || mode === 'signup') && captcha.missing) {
       setStatus('아래 확인 상자를 먼저 풀어 주세요.')
       return
     }
@@ -115,10 +115,10 @@ export default function AuthScreen({ onLogin, resetToken }: {
         await api.confirmPasswordReset(resetToken ?? '', password)
         go('login', '패스워드를 변경했어요. 새 패스워드로 로그인해 주세요.')
       } else {
-        if (mode === 'signup') await api.signup(email, password)
         const token = captcha.token
         captcha.reset() // 캡차 토큰은 한 번만 쓸 수 있어요.
-        onLogin(await api.login(email, password, token))
+        if (mode === 'signup') await api.signup(email, password, token)
+        onLogin(await api.login(email, password, mode === 'login' ? token : undefined))
       }
     } catch (err) {
       captcha.handle(err)
@@ -192,7 +192,7 @@ export default function AuthScreen({ onLogin, resetToken }: {
                 {errors.confirm && <p id="confirm-error" className="field__error">{errors.confirm}</p>}
               </div>
             )}
-            {mode === 'login' && captcha.widget}
+            {(mode === 'login' || mode === 'signup') && captcha.widget}
             {mode === 'login' && (
               <p className="auth__forgot">
                 <button type="button" className="textbtn" onClick={() => go('forgot')}>패스워드를 잊었어요</button>

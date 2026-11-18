@@ -80,7 +80,8 @@ function query(params: Record<string, string | number | undefined>): string {
 
 export const api = {
   me: () => request<User>('GET', '/api/auth/me'),
-  signup: (email: string, password: string) => request<User>('POST', '/api/auth/signup', { email, password }),
+  signup: (email: string, password: string, captchaToken?: string) =>
+    request<User>('POST', '/api/auth/signup', { email, password, captchaToken }),
   /** captchaToken: 여러 번 틀린 뒤 서버가 캡차를 요구할 때만 보내요. */
   login: (email: string, password: string, captchaToken?: string) =>
     request<User>('POST', '/api/auth/login', { email, password, captchaToken }),

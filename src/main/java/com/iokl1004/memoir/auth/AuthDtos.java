@@ -16,7 +16,9 @@ final class AuthDtos {
             @NotBlank @Email @Size(max = 255) String email,
             // BCrypt는 72바이트까지만 쓰므로, 공백 없는 영문·숫자·특수문자 8~64자로 제한해요.
             @NotBlank @Pattern(regexp = "^[\\x21-\\x7E]{8,64}$",
-                    message = "패스워드는 공백 없이 영문, 숫자, 특수문자로 8~64자여야 해요.") String password) {
+                    message = "패스워드는 공백 없이 영문, 숫자, 특수문자로 8~64자여야 해요.") String password,
+            /** 한 주소에서 가입이 많을 때만 필요해요. */
+            String captchaToken) {
 
         SignupRequest {
             email = normalize(email);

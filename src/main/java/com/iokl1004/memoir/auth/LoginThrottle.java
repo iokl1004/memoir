@@ -1,5 +1,6 @@
 package com.iokl1004.memoir.auth;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -25,6 +26,8 @@ public class LoginThrottle {
 
     static final int ACCOUNT_CAPTCHA_AFTER = 5;
     static final int IP_CAPTCHA_AFTER = 20;
+    /** 한 주소에서 15분 동안 이만큼 가입하면, 그다음 가입부터 캡차 (가짜 계정을 찍어내는 걸 막아요). 기본 5번 */
+    private final int signupCaptchaAfter;
     static final Duration WINDOW = Duration.ofMinutes(15);
 
     private final JdbcClient jdbc;
@@ -32,7 +35,9 @@ public class LoginThrottle {
     /** 틀린 기록은 요청이 실패(롤백)로 끝나도 남아야 해서 따로 커밋해요. */
     private final TransactionTemplate separate;
 
-    public LoginThrottle(JdbcClient jdbc, Captcha captcha, PlatformTransactionManager transactions) {
+    public LoginThrottle(JdbcClient jdbc, Captcha captcha, PlatformTransactionManager transactions,
+                         @Value("${memoir.signup.captcha-after:5}") int signupCaptchaAfter) {
+        this.signupCaptchaAfter = signupCaptchaAfter;
         this.jdbc = jdbc;
         this.captcha = captcha;
         this.separate = new TransactionTemplate(transactions);
@@ -65,6 +70,29 @@ public class LoginThrottle {
 
     static String ipKey(String ip) {
         return "ip:" + ip;
+    }
+
+    static String signupKey(String ip) {
+        return "signup:" + ip;
+    }
+
+    /** 가입하기 전에 불러요. 이 주소에서 가입이 많았으면 캡차를 확인해요. */
+    public void checkSignupCaptcha(String ip, String captchaToken) {
+        if (recentCount(signupKey(ip)) >= signupCaptchaAfter && !captcha.verify(captchaToken, ip)) {
+            throw captcha.required(HttpStatus.BAD_REQUEST, "이 주소에서 가입이 많아서, 로봇이 아닌지 확인해 주세요.");
+        }
+    }
+
+    /** 가입에 성공하면 이 주소의 가입 수를 올려요. */
+    public void recordSignup(String ip) {
+        separate.executeWithoutResult(tx -> record(signupKey(ip)));
+    }
+
+    /** 최근 15분 동안의 횟수 */
+    private int recentCount(String key) {
+        return jdbc.sql("SELECT failures FROM login_failures WHERE throttle_key = ? AND first_failed_at > ?")
+                .params(key, LocalDateTime.now().minus(WINDOW))
+                .query(Integer.class).optional().orElse(0);
     }
 
     /** 이 계정이나 주소로 다시 시도하려면 캡차를 풀어야 하는지 */

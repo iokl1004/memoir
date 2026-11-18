@@ -44,7 +44,7 @@
 | 백엔드 | Java 21, Spring Boot 4.1, Spring Security(세션 + CSRF), Spring Session JDBC, Spring Data JPA, Flyway, jsoup, Spring Mail |
 | DB | MySQL 8.4 (FULLTEXT ngram 인덱스) |
 | 프론트엔드 | React 19, TypeScript, Vite, TipTap(편집기) |
-| 테스트 | 백엔드: JUnit 5, Testcontainers(MySQL) — 89개 / 프론트엔드: Vitest — 9개 |
+| 테스트 | 백엔드: JUnit 5, Testcontainers(MySQL) — 91개 / 프론트엔드: Vitest — 9개 |
 | CI | GitHub Actions — push마다 백엔드 테스트, 프론트엔드 린트·테스트·빌드 |
 | 개발 환경 | Docker Compose (앱을 켜면 MySQL이 함께 떠요) |
 
@@ -79,6 +79,7 @@ bench/                             검색 성능 측정 도구와 결과
 - 그림은 긴 변 2,000px로 줄이고 PNG·JPEG 중 작은 쪽으로 저장해요. 본문에서 빠지거나 저장하지 않은 그림은 하루 뒤 정리 작업(`@Scheduled`)이 지워요.
 - 패스워드 찾기는 가입하지 않은 이메일에도 똑같이 응답하고, 메일은 따로(@Async) 보내서 응답 시간으로도 가입 여부가 드러나지 않아요. 링크 토큰은 해시만 저장하고, 패스워드를 바꾸면 다른 기기의 로그인을 모두 끊어요.
 - 로그인 시도 제한은 잠그지 않고 캡차(Cloudflare Turnstile)로 해요. 같은 계정을 15분 안에 5번 틀리면, 또는 한 접속 주소에서 20번 틀리면 그다음부터 캡차를 풀어야 다시 시도할 수 있어요. 캡차가 필요하면 패스워드를 확인하지도 않고, 가입하지 않은 이메일도 똑같이 세서 가입 여부가 드러나지 않아요. 캡차 스크립트는 캡차가 필요할 때만 불러와요.
+- 남용 막기: 한 접속 주소에서 15분 안에 가입을 5번 넘게 하면 캡차를 풀어야 해요. 그림은 한 사람에 200MB까지 저장해요(무료 DB 보호).
 - 사용자 지정 순서는 1024 간격으로 번호를 매기고, 사이에 끼울 자리가 없을 때만 다시 매겨요.
 
 ## 실행하기
@@ -87,6 +88,7 @@ Docker Desktop, Java 21, Node.js가 필요해요.
 
 ```bash
 ./gradlew bootRun                 # API 서버 :8080 (MySQL은 Docker로 자동 실행)
+./gradlew bootJar                 # 화면까지 든 실행 파일 build/libs/memoir.jar
 cd frontend && npm install && npm run dev   # 화면 :5173 (/api 요청은 8080으로 전달)
 ```
 
@@ -94,6 +96,28 @@ cd frontend && npm install && npm run dev   # 화면 :5173 (/api 요청은 8080�
 ./gradlew test                    # 통합 테스트 (Testcontainers가 MySQL을 띄워요)
 cd frontend && npm test           # 프론트엔드 테스트 (Vitest)
 ```
+
+## 배포하기 (Docker)
+
+`deploy/`에 앱 + MySQL + Caddy(HTTPS)를 한 번에 띄우는 묶음이 있어요. 화면(React)은 jar 안에 들어 있어서 서버에는 이 저장소만 있으면 돼요. Oracle Cloud ARM 서버처럼 CPU가 달라도 서버에서 직접 빌드하니 그대로 돌아가요.
+
+1. 서버에 Docker를 설치하고, 방화벽에서 80·443 포트를 열어요. 도메인의 DNS가 서버 IP를 가리키게 해요.
+2. 저장소를 받고 설정을 채워요.
+   ```bash
+   git clone https://github.com/iokl1004/memoir.git && cd memoir/deploy
+   cp .env.example .env    # DOMAIN, DB 패스워드, 메일, 캡차 키
+   docker compose up -d --build
+   ```
+   Caddy가 HTTPS 인증서를 자동으로 받아요. 앱은 `prod` 설정으로 뜨고, 처음 뜰 때 Flyway가 DB 테이블을 만들어요.
+3. DB 백업을 매일 돌려요(최근 7일치 보관, 되살리는 방법은 `deploy/backup.sh` 안에 있어요).
+   ```bash
+   crontab -e
+   0 3 * * * /home/ubuntu/memoir/deploy/backup.sh >> /home/ubuntu/memoir/deploy/backups/backup.log 2>&1
+   ```
+   백업은 같은 서버 디스크에 남아서, 서버가 통째로 망가지면 함께 사라져요. 가끔 내려받아 두거나 Oracle Object Storage(무료 20GB)에 복사해 두면 안전해요.
+4. 새 버전을 올릴 때: `git pull && docker compose up -d --build`
+
+배포용 설정(`application-prod.properties`): 로그인 쿠키는 HTTPS로만(Secure, HttpOnly, SameSite=Lax), 오류 응답에 내부 정보 숨김, 메일 링크 주소(APP_URL)가 없으면 시작하지 않음, 시간대는 한국 시간.
 
 ## 패스워드 찾기 메일 (Gmail)
 

@@ -1,6 +1,7 @@
 package com.iokl1004.memoir.memo;
 
 import com.iokl1004.memoir.auth.LoginUser;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -32,9 +33,12 @@ public class MemoImageController {
     static final int MAX_BYTES = 5 * 1024 * 1024;
 
     private final JdbcClient jdbc;
+    /** 한 사람이 저장할 수 있는 그림 용량. 무료 DB가 금방 차지 않게 해요. */
+    private final long quotaBytes;
 
-    public MemoImageController(JdbcClient jdbc) {
+    public MemoImageController(JdbcClient jdbc, @Value("${memoir.images.quota-mb:200}") long quotaMb) {
         this.jdbc = jdbc;
+        this.quotaBytes = quotaMb * 1024 * 1024;
     }
 
     record UploadedImage(Long id, String url) {
@@ -57,6 +61,12 @@ public class MemoImageController {
             throw new ResponseStatusException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "PNG, JPEG, GIF, WebP 그림만 올릴 수 있어요.");
         }
         MemoImages.Encoded stored = MemoImages.shrink(data, type);
+        long used = jdbc.sql("SELECT COALESCE(SUM(byte_size), 0) FROM memo_images WHERE user_id = ?")
+                .param(user.id()).query(Long.class).single();
+        if (used + stored.data().length > quotaBytes) {
+            throw new ResponseStatusException(HttpStatus.CONTENT_TOO_LARGE, "그림 저장 공간(%dMB)을 다 썼어요. 그림이 든 메모를 지우면 공간이 생겨요."
+                    .formatted(quotaBytes / 1024 / 1024));
+        }
         LocalDateTime now = LocalDateTime.now();
         KeyHolder key = new GeneratedKeyHolder();
         // 아직 어느 메모에도 없어서 detached_at을 채워 둬요. 메모를 저장하면 비워지고, 끝내 저장하지 않으면 하루 뒤 지워져요.

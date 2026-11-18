@@ -1,0 +1,63 @@
+# memoir 배포: 앱 + MySQL + Caddy(HTTPS)
+# 서버에서 이 폴더로 와서 .env를 채운 뒤 실행해요.
+#   cp .env.example .env   (값 채우기)
+#   docker compose up -d --build
+# Caddy가 DOMAIN의 HTTPS 인증서(Let's Encrypt)를 자동으로 받고 갱신해요. 서버의 80, 443 포트가 열려 있어야 해요.
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: memoir
+      MYSQL_USER: memoir
+      MYSQL_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD를 .env에 적어 주세요}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?DB_ROOT_PASSWORD를 .env에 적어 주세요}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    # DB 포트는 밖으로 열지 않아요. 앱만 내부 네트워크로 접속해요.
+
+  app:
+    build: ..
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/memoir
+      SPRING_DATASOURCE_USERNAME: memoir
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
+      APP_URL: https://${DOMAIN:?DOMAIN을 .env에 적어 주세요}
+      SPRING_MAIL_HOST: ${SPRING_MAIL_HOST:-smtp.gmail.com}
+      SPRING_MAIL_PORT: ${SPRING_MAIL_PORT:-587}
+      SPRING_MAIL_USERNAME: ${SPRING_MAIL_USERNAME:-}
+      SPRING_MAIL_PASSWORD: ${SPRING_MAIL_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      CAPTCHA_SITE_KEY: ${CAPTCHA_SITE_KEY:-1x00000000000000000000AA}
+      CAPTCHA_SECRET_KEY: ${CAPTCHA_SECRET_KEY:-1x0000000000000000000000000000000AA}
+    # 앱 포트도 밖으로 열지 않고 Caddy만 받아요.
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  mysql-data:
+  caddy-data:
+  caddy-config:

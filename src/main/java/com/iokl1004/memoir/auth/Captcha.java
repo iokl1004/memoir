@@ -34,6 +34,9 @@ public class Captcha {
                    @Value("${memoir.captcha.secret-key}") String secretKey) {
         this.siteKey = siteKey;
         this.secretKey = secretKey;
+        if (siteKey.startsWith("1x000000")) {
+            log.warn("캡차가 Cloudflare 테스트 키라서 누구나 통과해요. 배포했다면 CAPTCHA_SITE_KEY, CAPTCHA_SECRET_KEY를 넣어 주세요.");
+        }
         SimpleClientHttpRequestFactory timeouts = new SimpleClientHttpRequestFactory();
         timeouts.setConnectTimeout(Duration.ofSeconds(3));
         timeouts.setReadTimeout(Duration.ofSeconds(5));

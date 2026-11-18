@@ -46,5 +46,36 @@ tasks.named('test') {
 	// 그래서 테스트에서는 기본으로 끄고, 세션을 DB에 두는지는 SessionPersistenceTest가 실제 HTTP로 확인해요.
 	// 로컬 비밀 설정(config/application.properties, 실제 메일 계정)은 테스트에서 읽지 않아요.
 	systemProperty 'spring.config.location', 'optional:classpath:/'
+	// 테스트는 모두 같은 주소(127.0.0.1)에서 가입해서, 가입 캡차는 AccountSecurityTest에서만 켜요.
+	systemProperty 'memoir.signup.captcha-after', '100000'
 	systemProperty 'spring.autoconfigure.exclude', 'org.springframework.boot.session.jdbc.autoconfigure.JdbcSessionAutoConfiguration'
+}
+
+// ---------------------------------------------------------------- 화면을 jar 하나에 묶기
+// bootJar가 React 화면(frontend/dist)을 함께 넣어서, 서버에는 jar 하나만 올리면 돼요.
+// Docker 빌드처럼 화면을 따로 빌드했으면 -PskipFrontend로 npm을 건너뛰어요. 테스트(./gradlew test)는 npm을 부르지 않아요.
+def windows = System.getProperty('os.name').toLowerCase().contains('windows')
+tasks.register('buildFrontend', Exec) {
+	description = 'React 화면을 frontend/dist로 빌드해요'
+	workingDir file('frontend')
+	commandLine(windows ? ['cmd', '/c', 'npm', 'run', 'build'] : ['npm', 'run', 'build'])
+	inputs.dir('frontend/src')
+	inputs.dir('frontend/public')
+	inputs.files('frontend/index.html', 'frontend/package-lock.json', 'frontend/vite.config.ts')
+	outputs.dir('frontend/dist')
+}
+
+tasks.named('bootJar') {
+	archiveFileName = 'memoir.jar'
+	if (!project.hasProperty('skipFrontend')) {
+		dependsOn 'buildFrontend'
+	}
+	from('frontend/dist') {
+		into 'BOOT-INF/classes/static'
+	}
+}
+
+// 실행용 jar(memoir.jar)만 남기고, 라이브러리용 -plain.jar는 만들지 않아요.
+tasks.named('jar') {
+	enabled = false
 }

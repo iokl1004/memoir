@@ -45,3 +45,8 @@ graphify-out/
 ### 로컬 비밀 설정 (메일 앱 비밀번호 등) ###
 /config/
 /AppPassword.txt
+
+### 배포 서버의 비밀 값과 백업 ###
+/deploy/.env
+/deploy/.env.local
+/deploy/backups/
