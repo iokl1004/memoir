@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { api, ApiError, type User } from './api'
 import ThemeToggle from './ThemeToggle'
 
@@ -8,6 +8,8 @@ type Errors = { email?: string; password?: string; confirm?: string }
 
 const PASSWORD_RULE = /^[\x21-\x7E]{8,64}$/
 const PASSWORD_HINT = '공백 없이 영문, 숫자, 특수문자로 8~64자'
+/** 서버가 같은 계정에 메일을 다시 보내기까지 기다리는 시간(PasswordResetService.RESEND_GAP)과 같아요. */
+const RESEND_SECONDS = 60
 
 const TITLES: Record<Mode, string> = {
   login: 'memoir에 로그인',
@@ -32,6 +34,40 @@ export default function AuthScreen({ onLogin, resetToken }: {
   const [errors, setErrors] = useState<Errors>({})
   const [status, setStatus] = useState('')
   const [sentTo, setSentTo] = useState('')
+  /** 이 시각(ms)이 지나야 같은 이메일로 다시 보낼 수 있어요. 그 전에 요청하면 서버가 조용히 건너뛰어서, 화면에서 남은 시간을 보여줘요. */
+  const [resendAt, setResendAt] = useState(0)
+  const [now, setNow] = useState(() => Date.now())
+  const waitSeconds = Math.max(0, Math.ceil((resendAt - now) / 1000))
+
+  useEffect(() => {
+    if (resendAt <= Date.now()) return
+    const timer = window.setInterval(() => {
+      setNow(Date.now())
+      if (Date.now() >= resendAt) window.clearInterval(timer)
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [resendAt])
+
+  /** 재설정 메일을 보내고 1분 기다리기를 시작해요. 아직 기다리는 중인 같은 이메일이면 보내지 않아요. */
+  async function sendResetMail(email: string) {
+    if (email === sentTo && waitSeconds > 0) return false
+    await api.requestPasswordReset(email)
+    setSentTo(email)
+    setResendAt(Date.now() + RESEND_SECONDS * 1000)
+    setNow(Date.now())
+    return true
+  }
+
+  async function resend() {
+    setBusy(true)
+    try {
+      await sendResetMail(sentTo)
+      setStatus('메일을 다시 보냈어요.')
+    } catch (err) {
+      setStatus(err instanceof ApiError ? err.message : '서버와 연결하지 못했어요.')
+    }
+    setBusy(false)
+  }
   const [busy, setBusy] = useState(false)
   const emailRef = useRef<HTMLInputElement>(null)
   const passwordRef = useRef<HTMLInputElement>(null)
@@ -67,9 +103,8 @@ export default function AuthScreen({ onLogin, resetToken }: {
     setStatus(BUSY[mode] ?? '')
     try {
       if (mode === 'forgot') {
-        await api.requestPasswordReset(email)
-        setSentTo(email)
-        go('sent')
+        const sent = await sendResetMail(email)
+        go('sent', sent ? '' : `조금 전에 보낸 메일이 있어요. ${waitSeconds}초 뒤에 다시 보낼 수 있어요.`)
       } else if (mode === 'reset') {
         await api.confirmPasswordReset(resetToken ?? '', password)
         go('login', '비밀번호를 바꿨어요. 새 비밀번호로 로그인해 주세요.')
@@ -100,14 +135,23 @@ export default function AuthScreen({ onLogin, resetToken }: {
         <h1 className="auth__title">{TITLES[mode]}</h1>
         <p className="auth__lead">
           {mode === 'forgot' ? '가입한 이메일을 적으면, 비밀번호를 다시 정하는 링크를 메일로 보내 드려요.'
-            : mode === 'sent' ? <><strong className="auth__email">{sentTo}</strong>(으)로 가입돼 있다면 재설정 링크를 보냈어요. 링크는 30분 동안 한 번만 쓸 수 있어요. 메일이 안 보이면 스팸함도 확인해 주세요.</>
+            : mode === 'sent' ? <><strong className="auth__email">{sentTo}</strong>(으)로 가입돼 있다면 재설정 링크를 보냈어요. 링크는 30분 동안 한 번만 쓸 수 있어요. 메일이 안 보이면 스팸함도 확인해 주세요. 다시 보내기는 1분에 한 번 할 수 있어요.</>
               : mode === 'reset' ? '앞으로 로그인할 새 비밀번호를 적어 주세요. 바꾸면 다른 기기의 로그인은 모두 풀려요.'
                 : '섹션별로 나눠 쓰고, 키워드와 작성일로 다시 찾는 메모장이에요.'}
         </p>
 
         {mode === 'sent' ? (
-          <div className="btn-row auth__form">
+          <div className="auth__form auth__sent">
             <button type="button" className="btn btn--primary auth__submit" onClick={() => go('login')}>로그인으로 돌아가기</button>
+            <button type="button" className="btn btn--secondary auth__submit" onClick={resend}
+                    disabled={busy || waitSeconds > 0} aria-describedby="resend-wait">
+              메일 다시 보내기
+            </button>
+            {/* 1초마다 바뀌는 숫자는 화면 낭독기가 읽지 않게 하고, 다시 보낼 수 있게 됐을 때만 알려요. */}
+            <p id="resend-wait" className="field__hint auth__wait">
+              {waitSeconds > 0 ? <span aria-hidden="true">{waitSeconds}초 뒤에 다시 보낼 수 있어요.</span> : '이제 다시 보낼 수 있어요.'}
+            </p>
+            <p className="form__status" role="status">{status}</p>
           </div>
         ) : (
           <form key={mode} className="form auth__form" onSubmit={submit} noValidate>
