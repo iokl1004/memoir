@@ -77,6 +77,8 @@ FROM (SELECT n, 1 + FLOOR(RAND({base + 200}) * 5) AS k,
 JOIN s ON s.k = x.k;""")
         out.append(f"SELECT '{email}' AS user, COUNT(*) AS memos FROM memos WHERE user_id = @uid;")
 
+    # 이름 정렬 값(V7). 더미 제목에는 숫자가 없어서 제목 그대로예요.
+    out.append("UPDATE memos SET title_sort = title WHERE title_sort = '';")
     out.append("ANALYZE TABLE memos;")
     print("\n".join(out))
 

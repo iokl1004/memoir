@@ -56,9 +56,12 @@ public class MemoImageController {
         if (type == null) {
             throw new ResponseStatusException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "PNG, JPEG, GIF, WebP 그림만 올릴 수 있어요.");
         }
+        MemoImages.Encoded stored = MemoImages.shrink(data, type);
+        LocalDateTime now = LocalDateTime.now();
         KeyHolder key = new GeneratedKeyHolder();
-        jdbc.sql("INSERT INTO memo_images (user_id, content_type, byte_size, data, created_at) VALUES (?, ?, ?, ?, ?)")
-                .params(user.id(), type, data.length, data, LocalDateTime.now())
+        // 아직 어느 메모에도 없어서 detached_at을 채워 둬요. 메모를 저장하면 비워지고, 끝내 저장하지 않으면 하루 뒤 지워져요.
+        jdbc.sql("INSERT INTO memo_images (user_id, content_type, byte_size, data, created_at, detached_at) VALUES (?, ?, ?, ?, ?, ?)")
+                .params(user.id(), stored.contentType(), stored.data().length, stored.data(), now, now)
                 .update(key);
         long id = key.getKeyAs(Number.class).longValue();
         return new UploadedImage(id, "/api/images/" + id);

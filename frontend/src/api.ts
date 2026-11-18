@@ -102,8 +102,10 @@ export const api = {
     form.append('file', file, 'image')
     return request<{ id: number; url: string }>('POST', '/api/images', form)
   },
-  /** 메모를 다른 섹션으로 옮겨요. 편집기에서 섹션을 바꾸는 것과 같은 PATCH라서 수정일도 바뀌어요. */
-  moveMemoToSection: (id: number, sectionId: number) => request<Memo>('PATCH', `/api/memos/${id}`, { sectionId }),
+  /** 여러 메모를 한 섹션으로 옮겨요. 수정일도 바뀌어요. 하나라도 남의 메모면 아무것도 바뀌지 않아요. */
+  moveMemos: (ids: number[], sectionId: number) => request<void>('POST', '/api/memos/bulk-move', { ids, sectionId }),
+  /** 여러 메모를 한 번에 지워요. */
+  deleteMemos: (ids: number[]) => request<void>('POST', '/api/memos/bulk-delete', { ids }),
   /** 끌어 놓은 자리의 위(afterId)와 아래(beforeId) 메모 */
   moveMemo: (id: number, afterId: number | null, beforeId: number | null) =>
     request<void>('PUT', `/api/memos/${id}/position`, { afterId, beforeId }),

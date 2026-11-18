@@ -1,6 +1,8 @@
 package com.iokl1004.memoir.memo;
 
 import com.iokl1004.memoir.memo.search.MemoSearchResult;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 import java.time.LocalDateTime;
@@ -68,6 +70,10 @@ final class MemoDtos {
             return new MemoPage(result.items().stream().map(MemoSummary::from).toList(),
                     page, result.total(), result.totalCapped(), result.hasNext());
         }
+    }
+
+    /** 여러 메모를 한 번에 옮기거나 지울 때. 옮길 때만 sectionId가 필요해요. */
+    record MemoBulkRequest(@NotEmpty @Size(max = 500) List<@NotNull Long> ids, Long sectionId) {
     }
 
     /** 끌어 놓은 자리의 위(afterId)와 아래(beforeId) 메모. 맨 위나 맨 아래면 한쪽만 와요. */

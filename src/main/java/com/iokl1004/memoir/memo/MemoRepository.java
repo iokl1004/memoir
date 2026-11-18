@@ -5,11 +5,15 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 public interface MemoRepository extends JpaRepository<Memo, Long> {
 
     Optional<Memo> findByIdAndUserId(Long id, Long userId);
+
+    List<Memo> findAllByIdInAndUserId(Collection<Long> ids, Long userId);
 
     /** 새 메모를 사용자 순서의 맨 위에 두려고 가장 작은 순서 값을 찾아요. */
     @Query("SELECT COALESCE(MIN(m.position), 0) FROM Memo m WHERE m.user.id = :userId")

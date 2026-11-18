@@ -1,14 +1,23 @@
 # memoir
 
+[![CI](https://github.com/iokl1004/memoir/actions/workflows/ci.yml/badge.svg)](https://github.com/iokl1004/memoir/actions/workflows/ci.yml)
+
 섹션을 트리로 나눠 쓰고, 키워드와 작성일로 다시 찾는 개인 메모 웹앱이에요.
+
+![섹션 트리, 메모 목록, 그림이 들어간 편집기](docs/screenshots/desktop.png)
+
+| 입력하는 동안 검색 결과 미리보기 | 휴대폰: 섹션 서랍 | 휴대폰: 길게 눌러 여러 개 고르기 |
+|---|---|---|
+| ![검색 미리보기](docs/screenshots/search.png) | ![섹션 서랍](docs/screenshots/mobile-drawer.png) | ![여러 개 고르기](docs/screenshots/mobile-select.png) |
 
 - **섹션 트리**: 회사 › 프로젝트 › 회의처럼 단계 제한 없이 나눠요. 끌어서 다른 섹션 안이나 옆으로 옮기고, 이름·만든 날짜·직접 정한 순서로 정렬해요. 우클릭 메뉴로 하위 섹션 만들기, 이름 바꾸기, 지우기를 해요.
 - **검색**: 제목과 본문에서 여러 단어를 함께 찾고, 섹션과 작성일 기간으로 좁혀요. 입력하는 동안 검색창 아래에 결과를 10건씩 미리 보여줘요.
-- **정렬**: 이름, 수정한 날짜, 만든 날짜(오름·내림차순), 직접 정한 순서(끌기 또는 Alt + ↑↓)
-- **메모 옮기기**: 목록의 메모를 끌어 사이드바 섹션에 놓으면 그 섹션으로 옮겨져요. Ctrl + 클릭(휴대폰은 길게 누르기)으로 여러 개를 골라 한 번에 옮겨요.
-- **편집**: 글자와 그림을 함께 쓰는 편집기. 캡처한 그림을 붙여넣거나 끌어 놓으면 바로 들어가요(한 장 5MB). 저장하지 않고 떠나면 경고, Ctrl + S 저장
+- **정렬**: 이름(숫자는 크기 순서: 9 → 10 → 22), 수정한 날짜, 만든 날짜(오름·내림차순), 직접 정한 순서(끌기 또는 Alt + ↑↓)
+- **메모 옮기기**: 목록의 메모를 끌어 사이드바 섹션에 놓으면 그 섹션으로 옮겨져요. Ctrl + 클릭(휴대폰은 길게 누르기)으로 여러 개를 골라 한 번에 옮기거나 지워요.
+- **편집**: 글자와 그림을 함께 쓰는 편집기. 캡처한 그림을 붙여넣거나 끌어 놓으면 바로 들어가고, 크기를 조절해요(한 장 5MB, 큰 그림은 자동으로 줄여 저장). 저장하지 않고 떠나면 경고, Ctrl + S 저장
 - **화면**: 섹션과 메모 목록 칸의 넓이를 끌어서 바꾸고, 접었다 펼 수 있어요.
-- **라이트/다크 모드**, 휴대폰 화면
+- **휴대폰**: 섹션은 왼쪽 서랍으로, 섹션 메뉴는 길게 누르기로, 고른 메모는 아래쪽 막대에서 옮기거나 지워요.
+- **라이트/다크 모드**. 서버를 다시 켜도 로그인이 유지돼요(세션을 DB에 저장).
 
 ## 검색 성능: 50만 건에서 가장 느린 검색 1,337ms → 27ms
 
@@ -31,10 +40,11 @@
 
 | | |
 |---|---|
-| 백엔드 | Java 21, Spring Boot 4.1, Spring Security(세션 + CSRF), Spring Data JPA, Flyway |
+| 백엔드 | Java 21, Spring Boot 4.1, Spring Security(세션 + CSRF), Spring Session JDBC, Spring Data JPA, Flyway, jsoup |
 | DB | MySQL 8.4 (FULLTEXT ngram 인덱스) |
 | 프론트엔드 | React 19, TypeScript, Vite, TipTap(편집기) |
-| 테스트 | JUnit 5, Testcontainers(MySQL) — 통합 테스트 68개 |
+| 테스트 | 백엔드: JUnit 5, Testcontainers(MySQL) — 76개 / 프론트엔드: Vitest — 9개 |
+| CI | GitHub Actions — push마다 백엔드 테스트, 프론트엔드 린트·테스트·빌드 |
 | 개발 환경 | Docker Compose (앱을 켜면 MySQL이 함께 떠요) |
 
 ## 구조
@@ -45,8 +55,15 @@ src/main/java/com/iokl1004/memoir
  ├─ section   섹션 트리: 만들기, 이름 바꾸기, 옮기기, 지우기(하위 섹션과 메모까지)
  └─ memo      메모 CRUD, 사용자 지정 순서, 본문 HTML 정리(jsoup), 그림 올리기
      └─ search  MemoSearcher 인터페이스 — LIKE / FULLTEXT / auto(기본값)
-src/main/resources/db/migration   Flyway V1~V5
-frontend/                          React 화면
+src/main/java/db/migration         Flyway Java 마이그레이션 (V8: 기존 메모의 이름 정렬 값 채우기)
+src/main/resources/db/migration   Flyway V1~V7
+frontend/src
+ ├─ Workspace.tsx   화면 상태와 세 칸 배치
+ ├─ SectionNav.tsx  섹션 트리 (끌기, 우클릭·길게 누르기 메뉴, 서랍)
+ ├─ MemoList.tsx    메모 목록 (끌기, 여러 개 고르기)
+ ├─ SearchBar.tsx   검색창과 결과 미리보기
+ ├─ MemoEditor.tsx  TipTap 편집기 (처음 열 때 불러와요)
+ └─ sectionTree.ts  평평한 섹션 목록 → 트리, 정렬 (Vitest로 테스트)
 bench/                             검색 성능 측정 도구와 결과
 ```
 
@@ -56,6 +73,9 @@ bench/                             검색 성능 측정 도구와 결과
 - 섹션 삭제(하위 섹션 + 안의 메모)와 섹션 이동(순환 검사)은 한 트랜잭션으로 처리해요.
 - 본문 HTML은 서버에서 jsoup으로 정리해요(스크립트·이벤트 속성·바깥 그림 제거). 검색은 HTML이 아니라 뽑아낸 글자로 해서 태그 이름이 검색되지 않아요.
 - 그림은 파일 앞부분으로 형식을 확인하고(PNG·JPEG·GIF·WebP만), 올린 사람만 볼 수 있어요. 메모를 지우면 DB가 그림도 함께 지워요.
+- 이름 정렬은 제목의 숫자를 12자리로 맞춘 값(`title_sort`)으로 해서, 인덱스를 그대로 쓰면서도 9 → 10 → 22 순서가 돼요.
+- 여러 메모를 옮기거나 지울 때는 한 요청으로 처리하고, 하나라도 남의 메모가 섞이면 아무것도 바꾸지 않아요.
+- 그림은 긴 변 2,000px로 줄이고 PNG·JPEG 중 작은 쪽으로 저장해요. 본문에서 빠지거나 저장하지 않은 그림은 하루 뒤 정리 작업(`@Scheduled`)이 지워요.
 - 사용자 지정 순서는 1024 간격으로 번호를 매기고, 사이에 끼울 자리가 없을 때만 다시 매겨요.
 
 ## 실행하기
@@ -69,6 +89,7 @@ cd frontend && npm install && npm run dev   # 화면 :5173 (/api 요청은 8080�
 
 ```bash
 ./gradlew test                    # 통합 테스트 (Testcontainers가 MySQL을 띄워요)
+cd frontend && npm test           # 프론트엔드 테스트 (Vitest)
 ```
 
 ## 디자인

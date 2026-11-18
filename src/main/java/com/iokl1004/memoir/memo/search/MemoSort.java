@@ -6,8 +6,9 @@ public enum MemoSort {
     CREATED_ASC("m.created_at ASC, m.id ASC"),
     UPDATED_DESC("m.updated_at DESC, m.id DESC"),
     UPDATED_ASC("m.updated_at ASC, m.id ASC"),
-    TITLE_ASC("m.title ASC, m.id ASC"),
-    TITLE_DESC("m.title DESC, m.id DESC"),
+    /** 숫자는 크기 순서예요. ("업무 일지 9" → "업무 일지 22") */
+    TITLE_ASC("m.title_sort ASC, m.id ASC"),
+    TITLE_DESC("m.title_sort DESC, m.id DESC"),
     /** 사용자가 끌어서 정한 순서 */
     CUSTOM("m.position ASC, m.id ASC");
 

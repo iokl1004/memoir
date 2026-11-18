@@ -11,12 +11,14 @@ import com.iokl1004.memoir.memo.search.MemoSort;
 import com.iokl1004.memoir.section.Section;
 import com.iokl1004.memoir.section.SectionRepository;
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 @Service
@@ -28,11 +30,11 @@ public class MemoService {
     private final SectionRepository sections;
     private final UserRepository users;
     private final MemoSearcher searcher;
-    private final JdbcClient jdbc;
+    private final MemoImages images;
 
     public MemoService(MemoRepository memos, SectionRepository sections, UserRepository users, MemoSearcher searcher,
-                       JdbcClient jdbc) {
-        this.jdbc = jdbc;
+                       MemoImages images) {
+        this.images = images;
         this.memos = memos;
         this.sections = sections;
         this.users = users;
@@ -46,7 +48,7 @@ public class MemoService {
         long position = memos.minPosition(userId) - POSITION_GAP;
         Body body = body(request.contentHtml(), request.content() == null ? "" : request.content());
         Memo memo = memos.save(new Memo(users.getReferenceById(userId), section, position, request.title(), body.text, body.html));
-        attachImages(userId, memo.getId(), body.imageIds);
+        images.syncWithMemo(userId, memo.getId(), body.imageIds);
         return MemoResponse.from(memo);
     }
 
@@ -64,13 +66,41 @@ public class MemoService {
                 request.title() != null ? request.title() : memo.getTitle(),
                 body.text, body.html,
                 request.sectionId() != null ? ownedSection(userId, request.sectionId()) : memo.getSection());
-        attachImages(userId, memo.getId(), body.imageIds);
+        if (newBody) {
+            images.syncWithMemo(userId, memo.getId(), body.imageIds);
+        }
         return MemoResponse.from(memo);
     }
 
     @Transactional
     public void delete(Long userId, Long memoId) {
         memos.delete(ownedMemo(userId, memoId));
+    }
+
+    /** 고른 메모들을 한 섹션으로 옮겨요. 하나라도 내 메모가 아니면 아무것도 옮기지 않아요. */
+    @Transactional
+    public void moveAll(Long userId, Collection<Long> memoIds, Long sectionId) {
+        Section section = ownedSection(userId, sectionId);
+        for (Memo memo : ownedMemos(userId, memoIds)) {
+            if (!memo.getSection().getId().equals(section.getId())) {
+                memo.update(memo.getTitle(), memo.getContent(), memo.getContentHtml(), section);
+            }
+        }
+    }
+
+    /** 고른 메모들을 지워요. 하나라도 내 메모가 아니면 아무것도 지우지 않아요. 그림은 DB가 함께 지워요. */
+    @Transactional
+    public void deleteAll(Long userId, Collection<Long> memoIds) {
+        memos.deleteAllInBatch(ownedMemos(userId, memoIds));
+    }
+
+    private List<Memo> ownedMemos(Long userId, Collection<Long> memoIds) {
+        Set<Long> ids = new HashSet<>(memoIds);
+        List<Memo> found = memos.findAllByIdInAndUserId(ids, userId);
+        if (found.size() != ids.size()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "메모를 찾을 수 없어요.");
+        }
+        return found;
     }
 
     /**
@@ -136,18 +166,6 @@ public class MemoService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "본문은 20,000자까지 쓸 수 있어요.");
         }
         return new Body(cleaned.text(), cleaned.html(), cleaned.imageIds());
-    }
-
-    /** 본문에 들어간 내 그림을 이 메모에 묶어요. 메모가 지워지면 DB가 그림도 함께 지워요. */
-    private void attachImages(Long userId, Long memoId, Set<Long> imageIds) {
-        if (imageIds.isEmpty()) {
-            return;
-        }
-        jdbc.sql("UPDATE memo_images SET memo_id = :memoId WHERE user_id = :userId AND memo_id IS NULL AND id IN (:ids)")
-                .param("memoId", memoId)
-                .param("userId", userId)
-                .param("ids", imageIds)
-                .update();
     }
 
     private Memo ownedMemo(Long userId, Long memoId) {

@@ -1,6 +1,7 @@
 package com.iokl1004.memoir.memo;
 
 import com.iokl1004.memoir.auth.LoginUser;
+import com.iokl1004.memoir.memo.MemoDtos.MemoBulkRequest;
 import com.iokl1004.memoir.memo.MemoDtos.MemoCreateRequest;
 import com.iokl1004.memoir.memo.MemoDtos.MemoPage;
 import com.iokl1004.memoir.memo.MemoDtos.MemoResponse;
@@ -25,6 +26,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
 
@@ -77,6 +79,23 @@ public class MemoController {
     public MemoResponse update(@AuthenticationPrincipal LoginUser user, @PathVariable Long id,
                                @Valid @RequestBody MemoUpdateRequest request) {
         return memoService.update(user.id(), id, request);
+    }
+
+    /** 고른 메모를 한 섹션으로 옮겨요. */
+    @PostMapping("/bulk-move")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void moveAll(@AuthenticationPrincipal LoginUser user, @Valid @RequestBody MemoBulkRequest request) {
+        if (request.sectionId() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "옮길 섹션을 알려 주세요.");
+        }
+        memoService.moveAll(user.id(), request.ids(), request.sectionId());
+    }
+
+    /** 고른 메모를 지워요. */
+    @PostMapping("/bulk-delete")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteAll(@AuthenticationPrincipal LoginUser user, @Valid @RequestBody MemoBulkRequest request) {
+        memoService.deleteAll(user.id(), request.ids());
     }
 
     @DeleteMapping("/{id}")

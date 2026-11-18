@@ -2,8 +2,10 @@ package com.iokl1004.memoir;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication
+@EnableScheduling
 public class MemoirApplication {
 
 	public static void main(String[] args) {

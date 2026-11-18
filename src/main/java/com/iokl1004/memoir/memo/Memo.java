@@ -37,6 +37,10 @@ public class Memo {
     @Column(nullable = false, length = 100)
     private String title;
 
+    /** 이름 정렬용 값. 숫자의 자릿수를 맞춰 "9"가 "22"보다 앞에 오게 해요. (MemoTitles) */
+    @Column(nullable = false)
+    private String titleSort;
+
     /** 본문에서 글자만 뽑은 것. 검색과 목록 미리보기에 써요. */
     @Column(nullable = false, columnDefinition = "MEDIUMTEXT")
     private String content;
@@ -59,6 +63,7 @@ public class Memo {
         this.section = section;
         this.position = position;
         this.title = title;
+        this.titleSort = MemoTitles.sortKey(title);
         this.content = content;
         this.contentHtml = contentHtml;
         this.createdAt = LocalDateTime.now();
@@ -67,6 +72,7 @@ public class Memo {
 
     public void update(String title, String content, String contentHtml, Section section) {
         this.title = title;
+        this.titleSort = MemoTitles.sortKey(title);
         this.content = content;
         this.contentHtml = contentHtml;
         this.section = section;

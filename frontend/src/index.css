@@ -202,7 +202,8 @@ html:not([data-motion="off"]) .btn.btn--danger:hover { background: color-mix(in 
 .name-input__actions .btn { flex: 1 1 0; }
 html[data-buttons="arrow"] .name-input__actions .btn--secondary { text-decoration: none; border-color: var(--line-strong); }
 /* the arrow marks a forward action; confirm, cancel and delete are not one */
-html[data-buttons="arrow"] :is(.name-input__actions, .dialog__actions) .btn::after { content: none; }
+html[data-buttons="arrow"] :is(.name-input__actions, .dialog__actions, .select-actions) .btn::after,
+html[data-buttons="arrow"] .list__sections-btn::after { content: none; }
 
 .list { grid-area: list; overflow-y: auto; border-right: 1px solid var(--line); padding: var(--s-5) 0 var(--s-6); }
 .list__head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); padding: 0 var(--s-5); }
@@ -343,11 +344,42 @@ html[data-buttons="arrow"] :is(.name-input__actions, .dialog__actions) .btn::aft
 html[data-motion="off"] .app, html[data-motion="off"] :is(.sections, .list) > * { transition: none; animation: none; }
 @media (prefers-reduced-motion: reduce) { .app, :is(.sections, .list) > * { transition: none; animation: none; } }
 
+/* narrow screens: sections slide in from the left as a drawer; picked memos get a bottom action bar */
+.list__sections-btn { display: none; flex: none; }
+.drawer-backdrop { position: fixed; inset: 0; z-index: 39; background: color-mix(in oklab, #000 45%, transparent); animation: fade-in 200ms var(--ease, ease-out); }
+@keyframes fade-in { from { opacity: 0; } }
+@keyframes drawer-in { from { translate: -100% 0; } }
+.name-input__label { font-size: var(--t-label); color: var(--muted); }
+.select-actions {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 35; display: flex; align-items: center; gap: var(--s-2) var(--s-3);
+  padding: var(--s-3) var(--s-4) calc(var(--s-3) + env(safe-area-inset-bottom)); border-top: 1px solid var(--line-strong);
+  background: var(--surface); box-shadow: 0 -8px 24px color-mix(in oklab, #000 18%, transparent);
+  animation: sheet-in 200ms var(--ease, ease-out);
+}
+@keyframes sheet-in { from { translate: 0 100%; } }
+.select-actions__count { font: 500 var(--t-small)/1.2 var(--font-text); white-space: nowrap; }
+.select-actions__move {
+  flex: 1 1 auto; min-width: 0; height: 44px; padding: 0 var(--s-2); border: 1px solid var(--line-strong); border-radius: var(--r-sm);
+  background: var(--bg); color: var(--ink); font: 400 var(--t-small)/1.4 var(--font-text);
+}
+.select-actions .btn { height: 44px; }
+.select-actions__delete { color: var(--error); }
+.list[data-selecting] .pane-body { padding-bottom: 88px; }
+html[data-motion="off"] :is(.drawer-backdrop, .select-actions, .sections[data-drawer]) { animation: none; }
+@media (prefers-reduced-motion: reduce) { :is(.drawer-backdrop, .select-actions, .sections[data-drawer]) { animation: none; } }
+
 /* ---------------------------------------------------------------- tablet: no sidebar (sections stay in the search) */
 @media (max-width: 1099px) {
   :root { --topbar: auto; }
   .app { grid-template-columns: var(--listw) minmax(0, 1fr); grid-template-areas: "top top" "list pane"; }
   .sections, .resizer--nav { display: none; }
+  .list__sections-btn { display: inline-flex; }
+  .sections[data-drawer] {
+    display: block; position: fixed; inset: 0 auto 0 0; z-index: 40; width: min(320px, 86vw);
+    box-shadow: 8px 0 32px color-mix(in oklab, #000 30%, transparent); animation: drawer-in 220ms var(--ease, ease-out);
+  }
+  .sections[data-drawer] .section-item, .sections[data-drawer] .section-row__toggle { min-height: 44px; }
+  .sections[data-drawer] .collapse-btn { width: 44px; height: 44px; }
   .topbar { flex-wrap: wrap; row-gap: var(--s-3); padding-block: var(--s-3); }
   .topbar__email { display: none; }
   .search { order: 3; flex-basis: 100%; max-width: none; }
@@ -360,6 +392,7 @@ html[data-motion="off"] .app, html[data-motion="off"] :is(.sections, .list) > * 
   .app[data-view="editor"] { grid-template-areas: "top" "pane"; }
   /* one pane at a time: no widths to drag, and the list never folds */
   .resizer, .collapse-btn, .list[data-collapsed] > .rail-toggle { display: none !important; }
+  .sections[data-drawer] .collapse-btn { display: inline-grid !important; }
   .list[data-collapsed] { padding: var(--s-5) 0 var(--s-6); overflow-y: auto; }
   .list[data-collapsed] > .pane-body { display: block; }
   .app[data-view="list"] .pane, .app[data-view="editor"] .list { display: none; }
