@@ -80,6 +80,10 @@ export const api = {
   signup: (email: string, password: string) => request<User>('POST', '/api/auth/signup', { email, password }),
   login: (email: string, password: string) => request<User>('POST', '/api/auth/login', { email, password }),
   logout: () => request<void>('POST', '/api/auth/logout'),
+  /** 비밀번호 찾기 메일. 가입하지 않은 이메일이어도 똑같이 성공해요(가입 여부를 숨겨요). */
+  requestPasswordReset: (email: string) => request<void>('POST', '/api/auth/password-reset', { email }),
+  confirmPasswordReset: (token: string, password: string) =>
+    request<void>('POST', '/api/auth/password-reset/confirm', { token, password }),
 
   sections: () => request<Section[]>('GET', '/api/sections'),
   createSection: (name: string, parentId: number | null) => request<Section>('POST', '/api/sections', { name, parentId }),

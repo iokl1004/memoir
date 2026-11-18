@@ -25,7 +25,8 @@ public class SecurityConfig {
     SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(HttpMethod.POST, "/api/auth/signup", "/api/auth/login").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/auth/signup", "/api/auth/login",
+                                "/api/auth/password-reset", "/api/auth/password-reset/confirm").permitAll()
                         .requestMatchers("/api/**").authenticated()
                         // React 화면 파일과 /error는 누구나 접근할 수 있어요.
                         .anyRequest().permitAll())

@@ -41,3 +41,6 @@ graphify-out/
 
 ### Claude Code (PC 전용 설정) ###
 .claude/settings.local.json
+
+### 로컬 비밀 설정 (메일 앱 비밀번호 등) ###
+/config/

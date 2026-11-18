@@ -26,6 +26,7 @@ dependencies {
 	implementation 'org.flywaydb:flyway-mysql'
 	implementation 'org.jsoup:jsoup:1.21.2'
 	implementation 'org.springframework.boot:spring-boot-starter-session-jdbc'
+	implementation 'org.springframework.boot:spring-boot-starter-mail'
 	developmentOnly 'org.springframework.boot:spring-boot-docker-compose'
 	runtimeOnly 'com.mysql:mysql-connector-j'
 	testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
@@ -43,5 +44,7 @@ tasks.named('test') {
 	useJUnitPlatform()
 	// MockMvc 테스트는 가짜 세션(MockHttpSession)을 쓰는데, Spring Session은 쿠키로 세션을 찾아서 둘이 맞지 않아요.
 	// 그래서 테스트에서는 기본으로 끄고, 세션을 DB에 두는지는 SessionPersistenceTest가 실제 HTTP로 확인해요.
+	// 로컬 비밀 설정(config/application.properties, 실제 메일 계정)은 테스트에서 읽지 않아요.
+	systemProperty 'spring.config.location', 'optional:classpath:/'
 	systemProperty 'spring.autoconfigure.exclude', 'org.springframework.boot.session.jdbc.autoconfigure.JdbcSessionAutoConfiguration'
 }

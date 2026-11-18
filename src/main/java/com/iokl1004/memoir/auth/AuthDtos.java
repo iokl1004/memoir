@@ -30,6 +30,19 @@ final class AuthDtos {
         }
     }
 
+    record PasswordResetRequest(@NotBlank @Email @Size(max = 255) String email) {
+
+        PasswordResetRequest {
+            email = normalize(email);
+        }
+    }
+
+    record PasswordResetConfirm(
+            @NotBlank @Size(max = 100) String token,
+            @NotBlank @Pattern(regexp = "^[\\x21-\\x7E]{8,64}$",
+                    message = "비밀번호는 공백 없이 영문, 숫자, 특수문자로 8~64자여야 해요.") String password) {
+    }
+
     /** 검증 전에 이메일 앞뒤 공백을 지우고 소문자로 맞춰요. */
     private static String normalize(String email) {
         return email == null ? null : email.trim().toLowerCase(Locale.ROOT);

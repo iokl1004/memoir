@@ -2,6 +2,8 @@ package com.iokl1004.memoir.auth;
 
 import com.iokl1004.memoir.auth.AuthDtos.LoginRequest;
 import com.iokl1004.memoir.auth.AuthDtos.MeResponse;
+import com.iokl1004.memoir.auth.AuthDtos.PasswordResetConfirm;
+import com.iokl1004.memoir.auth.AuthDtos.PasswordResetRequest;
 import com.iokl1004.memoir.auth.AuthDtos.SignupRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -28,12 +30,14 @@ import org.springframework.web.server.ResponseStatusException;
 public class AuthController {
 
     private final AuthService authService;
+    private final PasswordResetService passwordResetService;
     private final AuthenticationManager authenticationManager;
     private final SecurityContextRepository securityContextRepository;
 
-    public AuthController(AuthService authService, AuthenticationManager authenticationManager,
-                          SecurityContextRepository securityContextRepository) {
+    public AuthController(AuthService authService, PasswordResetService passwordResetService,
+                          AuthenticationManager authenticationManager, SecurityContextRepository securityContextRepository) {
         this.authService = authService;
+        this.passwordResetService = passwordResetService;
         this.authenticationManager = authenticationManager;
         this.securityContextRepository = securityContextRepository;
     }
@@ -68,6 +72,20 @@ public class AuthController {
 
         LoginUser user = (LoginUser) authentication.getPrincipal();
         return new MeResponse(user.id(), user.email());
+    }
+
+    /** 비밀번호 찾기 메일을 보내요. 가입 여부와 상관없이 늘 204예요. */
+    @PostMapping("/password-reset")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void requestPasswordReset(@Valid @RequestBody PasswordResetRequest request) {
+        passwordResetService.request(request.email());
+    }
+
+    /** 메일 링크의 토큰으로 새 비밀번호를 정해요. */
+    @PostMapping("/password-reset/confirm")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void confirmPasswordReset(@Valid @RequestBody PasswordResetConfirm request) {
+        passwordResetService.confirm(request.token(), request.password());
     }
 
     @GetMapping("/me")
