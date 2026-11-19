@@ -56,6 +56,14 @@ export default function SectionNav({ tree, sort, onSortChange, draggingMemos, on
   function endPress() {
     if (press.current) window.clearTimeout(press.current.timer)
   }
+  // 고른 섹션이 바뀌면(검색에서 메모를 열 때 등) 접힌 상위 섹션을 펼쳐서 고른 섹션이 보이게 해요.
+  const [seenActive, setSeenActive] = useState(activeId)
+  if (activeId !== seenActive) {
+    setSeenActive(activeId)
+    const next = new Set(collapsed)
+    for (let p = tree.find(s => s.id === activeId)?.parentId; p != null; p = tree.find(s => s.id === p)?.parentId) next.delete(p)
+    if (next.size !== collapsed.size) setCollapsed(next)
+  }
   const total = tree.reduce((n, s) => n + s.memoCount, 0)
   const shown = visibleNodes(tree, collapsed)
   const targets = dragId === null ? [] : moveTargets(tree, dragId)

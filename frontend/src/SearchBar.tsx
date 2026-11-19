@@ -23,7 +23,7 @@ export default function SearchBar({ tree, filter, onSearch, onOpenMemo }: {
   tree: SectionNode[]
   filter: MemoFilter
   onSearch: (f: MemoFilter) => void
-  onOpenMemo: (id: number) => void
+  onOpenMemo: (memo: MemoSummary) => void
 }) {
   // 검색어가 바뀌면 부모가 key를 바꿔서 이 폼을 새로 만들어요. 그래서 초기값만 필터에서 가져와요.
   // 섹션 칸은 검색 중일 때만 필터를 따라요. 사이드바에서 섹션을 옮겨 다녀도 바뀌지 않아요.
@@ -73,14 +73,14 @@ export default function SearchBar({ tree, filter, onSearch, onOpenMemo }: {
     setSuggest(s => s && { ...s, items: [...s.items, ...p.items], hasNext: p.hasNext, page: s.page + 1 })
   }
 
-  function openMemo(id: number) {
+  function openMemo(memo: MemoSummary) {
     setOpen(false)
-    onOpenMemo(id)
+    onOpenMemo(memo)
   }
 
   function submit(e: FormEvent) {
     e.preventDefault()
-    if (open && suggest && active >= 0 && active < suggest.items.length) { openMemo(suggest.items[active].id); return }
+    if (open && suggest && active >= 0 && active < suggest.items.length) { openMemo(suggest.items[active]); return }
     const r = range()
     if (!r) { setError('시작일이 종료일보다 늦어요.'); return }
     setError('')
@@ -160,7 +160,7 @@ export default function SearchBar({ tree, filter, onSearch, onOpenMemo }: {
                       className="suggest__item"
                       onMouseDown={e => e.preventDefault()}
                       onMouseEnter={() => setActive(i)}
-                      onClick={() => openMemo(m.id)}>
+                      onClick={() => openMemo(m)}>
                     <span className="suggest__title">{m.title}</span>
                     {m.preview && <span className="suggest__preview">{m.preview}</span>}
                     <span className="suggest__meta">

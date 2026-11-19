@@ -113,6 +113,16 @@ export default function Workspace({ user, onLogout }: { user: User; onLogout: ()
     setFilter(next)
   }
 
+  /** 검색 미리보기에서 고른 메모: 그 메모의 섹션으로 옮겨 가서 목록에서도 고른 상태로 열어요. */
+  async function openFromSearch(memo: MemoSummary) {
+    if (!(await confirmLeave())) return
+    setDirty(false)
+    setStatus('')
+    setChecked(new Set())
+    setFilter({ sectionId: memo.sectionId })
+    setSelection({ kind: 'memo', id: memo.id })
+  }
+
   function changeSort(next: MemoSort) {
     localStorage.setItem('memoir-sort', next)
     setSort(next)
@@ -228,7 +238,7 @@ export default function Workspace({ user, onLogout }: { user: User; onLogout: ()
       <header className="topbar">
         <p className="brand"><span className="brand__mark" aria-hidden="true">m</span> memoir</p>
         <SearchBar key={JSON.stringify([filter.q, filter.from, filter.to])} tree={tree} filter={filter}
-                   onSearch={applyFilter} onOpenMemo={id => select({ kind: 'memo', id })} />
+                   onSearch={applyFilter} onOpenMemo={openFromSearch} />
         <div className="topbar__user">
           <ThemeToggle />
           <span className="topbar__email">{user.email}</span>
