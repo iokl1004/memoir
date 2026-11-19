@@ -6,26 +6,8 @@ on:
   pull_request:
 
 jobs:
-  backend:
-    name: 백엔드 (통합 테스트)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 21
-      - uses: gradle/actions/setup-gradle@v4
-      # Testcontainers가 러너의 Docker로 MySQL을 띄워요.
-      - run: ./gradlew test
-      - if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-report
-          path: build/reports/tests/test
-
   frontend:
-    name: 프론트엔드 (린트, 테스트, 빌드)
+    name: 화면 (린트, 단위 테스트, 빌드)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -41,3 +23,20 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build
+
+  database:
+    name: DB·함수 (로컬 Supabase 통합 테스트)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      # 러너의 Docker로 Supabase(DB, Auth, Storage, Edge Functions)를 띄우고 마이그레이션을 적용해요.
+      - run: npx --yes supabase@3.2.0 start -x studio,imgproxy,vector,logflare,realtime,supavisor
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run test:db
+        working-directory: frontend

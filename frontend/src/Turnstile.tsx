@@ -13,7 +13,7 @@ declare global {
 const SCRIPT = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'
 let loading: Promise<void> | null = null
 
-/** 캡차 스크립트는 캡차가 처음 필요할 때 한 번만 불러와요. (평소 로그인에는 외부 스크립트가 없어요) */
+/** 캡차 스크립트는 로그인 화면에서 한 번만 불러와요. */
 function loadScript(): Promise<void> {
   if (window.turnstile) return Promise.resolve()
   loading ??= new Promise((resolve, reject) => {
@@ -55,7 +55,7 @@ export default function Turnstile({ siteKey, onToken }: { siteKey: string; onTok
 
   return (
     <div className="captcha">
-      <p className="captcha__label">여러 번 틀려서, 로봇이 아닌지 확인할게요.</p>
+      <p className="captcha__label">로봇이 아닌지 확인할게요.</p>
       <div ref={ref} />
       {failed && <p className="field__error">확인 창을 불러오지 못했어요. 인터넷 연결을 확인하고 새로고침해 주세요.</p>}
     </div>

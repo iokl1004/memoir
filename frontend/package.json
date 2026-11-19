@@ -8,9 +8,11 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run src",
+    "test:db": "vitest run db-tests"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.119.1",
     "@tiptap/extension-image": "^3.34.0",
     "@tiptap/extensions": "^3.34.0",
     "@tiptap/pm": "^3.34.0",

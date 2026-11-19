@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { api, ApiError, type User } from './api'
-import { useCaptcha } from './captcha'
 import { useConfirm } from './confirm'
+import { IMAGE_QUOTA_MB } from './images'
 
 const PASSWORD_RULE = /^[\x21-\x7E]{8,64}$/
 
@@ -31,6 +31,7 @@ export default function AccountDialog({ user, onClose, onDeleted }: {
         </button>
       </div>
       <p className="account__email">{user.email}</p>
+      <ImageUsage />
       <ChangePassword />
       <DeleteAccount email={user.email} confirm={confirm} onDeleted={onDeleted} />
     </dialog>
@@ -42,7 +43,6 @@ function ChangePassword() {
   const [status, setStatus] = useState('')
   const [busy, setBusy] = useState(false)
   const formRef = useRef<HTMLFormElement>(null)
-  const captcha = useCaptcha()
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -60,17 +60,13 @@ function ChangePassword() {
       setStatus('')
       return
     }
-    if (captcha.missing) { setStatus('아래 확인 상자를 먼저 풀어 주세요.'); return }
     setBusy(true)
     setStatus('바꾸는 중')
-    const token = captcha.token
-    captcha.reset()
     try {
-      await api.changePassword(current, next, token)
+      await api.changePassword(current, next)
       formRef.current?.reset()
       setStatus('패스워드를 변경했어요. 다른 기기의 로그인은 풀렸어요.')
     } catch (err) {
-      captcha.handle(err)
       // 현재 패스워드가 틀렸다는 답이면 그 칸 아래에 보여줘요.
       if (err instanceof ApiError && err.status === 400 && err.message.startsWith('현재')) {
         setErrors({ [err.message.startsWith('현재 패스워드') ? 'current' : 'next']: err.message })
@@ -89,7 +85,6 @@ function ChangePassword() {
       <Field name="next" label="새 패스워드" autoComplete="new-password" error={errors.next}
              hint="공백 없이 영문, 숫자, 특수문자로 8~64자" />
       <Field name="again" label="새 패스워드 확인" autoComplete="new-password" error={errors.again} />
-      {captcha.widget}
       <div className="btn-row">
         <button type="submit" className="btn btn--primary btn--sm" disabled={busy}>패스워드 변경</button>
       </div>
@@ -106,14 +101,12 @@ function DeleteAccount({ email, confirm, onDeleted }: {
   const [error, setError] = useState('')
   const [status, setStatus] = useState('')
   const [busy, setBusy] = useState(false)
-  const captcha = useCaptcha()
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const password = String(new FormData(e.currentTarget).get('password') ?? '')
     if (!password) { setError('현재 패스워드를 적어 주세요.'); return }
     setError('')
-    if (captcha.missing) { setStatus('아래 확인 상자를 먼저 풀어 주세요.'); return }
     const ok = await confirm({
       title: '계정을 정말 지울까요?',
       body: `${email} 계정과 모든 섹션, 메모, 그림이 지워지고 되살릴 수 없어요.`,
@@ -123,13 +116,10 @@ function DeleteAccount({ email, confirm, onDeleted }: {
     if (!ok) return
     setBusy(true)
     setStatus('지우는 중')
-    const token = captcha.token
-    captcha.reset()
     try {
-      await api.deleteAccount(password, token)
+      await api.deleteAccount(password)
       onDeleted()
     } catch (err) {
-      captcha.handle(err)
       setStatus('')
       if (err instanceof ApiError && err.status === 400) setError(err.message)
       else setStatus(err instanceof ApiError ? err.message : '서버와 연결하지 못했어요.')
@@ -142,12 +132,30 @@ function DeleteAccount({ email, confirm, onDeleted }: {
       <h3 className="account__label">계정 지우기</h3>
       <p className="account__note">계정과 모든 섹션, 메모, 그림이 지워지고 되살릴 수 없어요.</p>
       <Field name="password" label="현재 패스워드" autoComplete="current-password" error={error} />
-      {captcha.widget}
       <div className="btn-row">
         <button type="submit" className="btn btn--primary btn--danger btn--sm" disabled={busy}>계정 지우기</button>
       </div>
       <p className="form__status" role="status">{status}</p>
     </form>
+  )
+}
+
+/** 그림 저장 공간을 얼마나 썼는지. 다 차기 전에 미리 정리할 수 있게 보여줘요. */
+function ImageUsage() {
+  const [used, setUsed] = useState<number | null>(null)
+  useEffect(() => { api.imageUsage().then(setUsed, () => setUsed(null)) }, [])
+  if (used === null) return null
+  const mb = used / 1024 / 1024
+  return (
+    <div className="account__section account__usage">
+      <h3 className="account__label" id="usage-label">그림 저장 공간</h3>
+      <meter className="usage__meter" min={0} max={IMAGE_QUOTA_MB} value={mb} high={IMAGE_QUOTA_MB * 0.8}
+             aria-labelledby="usage-label" />
+      <p className="account__note">
+        {mb < 0.1 && used > 0 ? '0.1' : mb.toFixed(1)}MB / {IMAGE_QUOTA_MB}MB 사용
+        {mb >= IMAGE_QUOTA_MB * 0.8 && ' · 거의 다 찼어요. 그림이 든 메모를 지우면 공간이 생겨요.'}
+      </p>
+    </div>
   )
 }
 

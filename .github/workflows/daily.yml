@@ -1,0 +1,62 @@
+name: 매일 백업과 청소
+
+# 매일 새벽 3시(한국 시간)에 돌아요. Actions 탭에서 손으로도 돌릴 수 있어요.
+# 1) 하루 지난 고아 그림을 지워요(cleanup-images 함수).
+# 2) DB와 그림 파일을 백업해요. 저장소가 공개라서 결과물은 암호화한 뒤에 올려요.
+# 이 작업이 매일 DB를 쓰기 때문에, 무료 Supabase의 "7일 동안 안 쓰면 일시 정지"도 막아 줘요.
+#
+# 저장소 Settings → Secrets and variables → Actions에 넣을 값:
+#   SUPABASE_URL          https://<프로젝트>.supabase.co
+#   SUPABASE_SECRET_KEY   Secret key (sb_secret_...)
+#   SUPABASE_DB_URL       Session pooler 접속 주소 (postgresql://postgres.<프로젝트>:<패스워드>@...:5432/postgres)
+#   CLEANUP_SECRET        `supabase secrets set CLEANUP_SECRET=...`로 넣은 값과 같은 값
+#   BACKUP_PASSPHRASE     백업을 잠글 긴 암호. 잃어버리면 백업을 열 수 없어요.
+#
+# 백업 열기:  openssl enc -d -aes-256-cbc -pbkdf2 -pass pass:'<BACKUP_PASSPHRASE>' -in memoir-backup.tar.gz.enc | tar xz
+
+on:
+  schedule:
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 고아 그림 청소
+        run: |
+          curl -fsS -X POST "$SUPABASE_URL/functions/v1/cleanup-images" -H "x-cleanup-secret: $CLEANUP_SECRET"
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          CLEANUP_SECRET: ${{ secrets.CLEANUP_SECRET }}
+
+      - name: DB 백업 (public 스키마와 사용자 계정)
+        run: |
+          mkdir -p backup
+          # 서버와 같은 Postgres 17의 pg_dump를 써요.
+          docker run --rm -e DB_URL postgres:17 \
+            pg_dump "$DB_URL" --no-owner --no-privileges --schema=public --schema=auth --schema=storage \
+            > backup/db.sql
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+
+      - name: 그림 파일 백업
+        run: node .github/scripts/download-images.mjs backup/images
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+
+      - name: 암호화
+        run: |
+          tar czf - backup | openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:BACKUP_PASSPHRASE -out memoir-backup.tar.gz.enc
+          rm -rf backup
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: memoir-backup-${{ github.run_id }}
+          path: memoir-backup.tar.gz.enc
+          retention-days: 14

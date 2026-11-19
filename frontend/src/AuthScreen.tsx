@@ -9,7 +9,7 @@ type Errors = { email?: string; password?: string; confirm?: string }
 
 const PASSWORD_RULE = /^[\x21-\x7E]{8,64}$/
 const PASSWORD_HINT = '공백 없이 영문, 숫자, 특수문자로 8~64자'
-/** 서버가 같은 계정에 메일을 다시 보내기까지 기다리는 시간(PasswordResetService.RESEND_GAP)과 같아요. */
+/** Supabase가 같은 이메일로 메일을 다시 보내기까지 기다리는 시간(supabase/config.toml의 max_frequency)과 같아요. */
 const RESEND_SECONDS = 60
 
 const TITLES: Record<Mode, string> = {
@@ -52,7 +52,9 @@ export default function AuthScreen({ onLogin, resetToken }: {
   /** 재설정 메일을 보내고 1분 기다리기를 시작해요. 아직 기다리는 중인 같은 이메일이면 보내지 않아요. */
   async function sendResetMail(email: string) {
     if (email === sentTo && waitSeconds > 0) return false
-    await api.requestPasswordReset(email)
+    const token = captcha.token
+    captcha.reset() // 캡차 토큰은 한 번만 쓸 수 있어요.
+    await api.requestPasswordReset(email, token)
     setSentTo(email)
     setResendAt(Date.now() + RESEND_SECONDS * 1000)
     setNow(Date.now())
@@ -60,6 +62,10 @@ export default function AuthScreen({ onLogin, resetToken }: {
   }
 
   async function resend() {
+    if (captcha.missing) {
+      setStatus('아래 확인 상자를 먼저 풀어 주세요.')
+      return
+    }
     setBusy(true)
     try {
       await sendResetMail(sentTo)
@@ -100,7 +106,7 @@ export default function AuthScreen({ onLogin, resetToken }: {
       setStatus(`확인할 칸이 ${Object.keys(next).length}개 있어요.`)
       return
     }
-    if ((mode === 'login' || mode === 'signup') && captcha.missing) {
+    if (askEmail && captcha.missing) {
       setStatus('아래 확인 상자를 먼저 풀어 주세요.')
       return
     }
@@ -117,11 +123,9 @@ export default function AuthScreen({ onLogin, resetToken }: {
       } else {
         const token = captcha.token
         captcha.reset() // 캡차 토큰은 한 번만 쓸 수 있어요.
-        if (mode === 'signup') await api.signup(email, password, token)
-        onLogin(await api.login(email, password, mode === 'login' ? token : undefined))
+        onLogin(mode === 'signup' ? await api.signup(email, password, token) : await api.login(email, password, token))
       }
     } catch (err) {
-      captcha.handle(err)
       setStatus(err instanceof ApiError ? err.message : '서버와 연결하지 못했어요.')
       setBusy(false)
     }
@@ -152,6 +156,7 @@ export default function AuthScreen({ onLogin, resetToken }: {
         {mode === 'sent' ? (
           <div className="auth__form auth__sent">
             <button type="button" className="btn btn--primary auth__submit" onClick={() => go('login')}>로그인으로 돌아가기</button>
+            {waitSeconds === 0 && captcha.widget}
             <button type="button" className="btn btn--secondary auth__submit" onClick={resend}
                     disabled={busy || waitSeconds > 0} aria-describedby="resend-wait">
               메일 다시 보내기
@@ -192,7 +197,7 @@ export default function AuthScreen({ onLogin, resetToken }: {
                 {errors.confirm && <p id="confirm-error" className="field__error">{errors.confirm}</p>}
               </div>
             )}
-            {(mode === 'login' || mode === 'signup') && captcha.widget}
+            {askEmail && captcha.widget}
             {mode === 'login' && (
               <p className="auth__forgot">
                 <button type="button" className="textbtn" onClick={() => go('forgot')}>패스워드를 잊었어요</button>

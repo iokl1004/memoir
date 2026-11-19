@@ -1,5 +1,2 @@
-/gradlew text eol=lf
-*.bat text eol=crlf
-*.jar binary
 *.sh text eol=lf
-/deploy/Caddyfile text eol=lf
+*.yml text eol=lf

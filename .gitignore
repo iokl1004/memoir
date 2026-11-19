@@ -1,39 +1,5 @@
-HELP.md
-.gradle
-build/
-!gradle/wrapper/gradle-wrapper.jar
-!**/src/main/**/build/
-!**/src/test/**/build/
-
-### STS ###
-.apt_generated
-.classpath
-.factorypath
-.project
-.settings
-.springBeans
-.sts4-cache
-bin/
-!**/src/main/**/bin/
-!**/src/test/**/bin/
-
-### IntelliJ IDEA ###
+### 편집기 ###
 .idea
-*.iws
-*.iml
-*.ipr
-out/
-!**/src/main/**/out/
-!**/src/test/**/out/
-
-### NetBeans ###
-/nbproject/private/
-/nbbuild/
-/dist/
-/nbdist/
-/.nb-gradle/
-
-### VS Code ###
 .vscode/
 
 ### graphify ###
@@ -42,11 +8,13 @@ graphify-out/
 ### Claude Code (PC 전용 설정) ###
 .claude/settings.local.json
 
-### 로컬 비밀 설정 (메일 앱 비밀번호 등) ###
+### 로컬 비밀 값 (Supabase 키, 메일 앱 비밀번호 등) ###
 /config/
 /AppPassword.txt
+.env
+.env.local
+.env.*.local
 
-### 배포 서버의 비밀 값과 백업 ###
-/deploy/.env
-/deploy/.env.local
-/deploy/backups/
+### Supabase 로컬 실행 파일 ###
+/supabase/.branches
+/supabase/.temp

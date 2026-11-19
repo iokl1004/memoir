@@ -4,6 +4,7 @@ import StarterKit from '@tiptap/starter-kit'
 import Image from '@tiptap/extension-image'
 import { Placeholder } from '@tiptap/extensions'
 import { api, ApiError, type Memo } from './api'
+import { editorSrc, toEditorHtml, toStoredHtml } from './images'
 import { useConfirm } from './confirm'
 
 const timeFmt = new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium', timeStyle: 'short' })
@@ -17,6 +18,20 @@ function textToHtml(text: string): string {
   const escape = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   return text.split('\n').map(line => `<p>${escape(line)}</p>`).join('')
 }
+
+/** 그림 번호(data-img)를 편집기 안에서도 잃지 않게 해요. 저장할 때 이 번호로 "/img/번호" 주소를 만들어요. */
+const MemoImage = Image.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      imageId: {
+        default: null,
+        parseHTML: el => el.getAttribute('data-img'),
+        renderHTML: attrs => (attrs.imageId ? { 'data-img': attrs.imageId } : {}),
+      },
+    }
+  },
+})
 
 function imageFiles(list: FileList | null | undefined): File[] {
   return [...(list ?? [])].filter(f => f.type.startsWith('image/'))
@@ -50,10 +65,11 @@ export default function MemoEditor({ memoId, initialSectionId, onDirtyChange, on
     setStatus('그림을 올리는 중')
     for (const file of ok) {
       try {
-        const { url } = await api.uploadImage(file)
+        const { id } = await api.uploadImage(file)
+        const src = await editorSrc(id)
         const editor = editorRef.current
         if (!editor || editor.isDestroyed) return
-        const node = { type: 'image', attrs: { src: url } }
+        const node = { type: 'image', attrs: { src, imageId: String(id) } }
         if (pos === undefined) editor.chain().focus().insertContent(node).run()
         else editor.chain().focus().insertContentAt(pos, node).run()
         setStatus('')
@@ -73,7 +89,7 @@ export default function MemoEditor({ memoId, initialSectionId, onDirtyChange, on
     extensions: [
       StarterKit.configure({ link: { openOnClick: false } }),
       // 그림을 고르면 좌우 모서리 손잡이가 생겨요. 비율은 그대로 두고 넓이만 바꿔요.
-      Image.configure({
+      MemoImage.configure({
         resize: { enabled: true, directions: ['left', 'right', 'bottom-left', 'bottom-right'], minWidth: 80, alwaysPreserveAspectRatio: true },
       }),
       Placeholder.configure({ placeholder: '여기에 메모를 적어요. 그림은 붙여넣거나 끌어다 놓으면 들어가요.' }),
@@ -111,9 +127,10 @@ export default function MemoEditor({ memoId, initialSectionId, onDirtyChange, on
 
   useEffect(() => {
     if (memoId === null || !editor) return
-    api.memo(memoId).then(m => {
+    api.memo(memoId).then(async m => {
+      const html = await toEditorHtml(m.contentHtml ?? textToHtml(m.content))
       if (editor.isDestroyed) return
-      editor.commands.setContent(m.contentHtml ?? textToHtml(m.content), { emitUpdate: false })
+      editor.commands.setContent(html, { emitUpdate: false })
       // 편집기가 HTML을 자기 모양으로 정리하니, 정리된 값을 기준으로 삼아야 "저장 안 됨"이 잘못 뜨지 않아요.
       const d = { title: m.title, html: editor.getHTML() }
       setMemo(m)
@@ -142,7 +159,7 @@ export default function MemoEditor({ memoId, initialSectionId, onDirtyChange, on
     setStatus('저장하는 중')
     try {
       const html = editor.getHTML()
-      const body = { title: draft.title, contentHtml: html, sectionId }
+      const body = { title: draft.title, contentHtml: toStoredHtml(html), content: editor.getText({ blockSeparator: '\n' }), sectionId }
       const result = memo ? await api.updateMemo(memo.id, body) : await api.createMemo(body)
       // 지금 편집기 값을 기준으로 둬요. 서버가 정리한 HTML과 모양이 조금 달라도 "저장 안 됨"이 뜨지 않게요.
       const d = { title: result.title, html }
