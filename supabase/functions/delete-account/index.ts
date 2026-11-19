@@ -24,6 +24,6 @@ Deno.serve(async req => {
   }
 
   const { error: deleteError } = await admin.auth.admin.deleteUser(user.id)
-  if (deleteError) return fail(500, '계정을 지우지 못했어요.')
+  if (deleteError) return fail(500, '계정을 삭제하지 못했어요.')
   return json({ ok: true })
 })

@@ -5,7 +5,7 @@ import { IMAGE_QUOTA_MB } from './images'
 
 const PASSWORD_RULE = /^[\x21-\x7E]{8,64}$/
 
-/** 계정 창: 패스워드 변경과 계정 지우기. 둘 다 현재 패스워드를 한 번 더 받아요. */
+/** 계정 창: 패스워드 변경과 계정 삭제. 둘 다 현재 패스워드를 한 번 더 받아요. */
 export default function AccountDialog({ user, onClose, onDeleted }: {
   user: User
   onClose: () => void
@@ -108,14 +108,14 @@ function DeleteAccount({ email, confirm, onDeleted }: {
     if (!password) { setError('현재 패스워드를 적어 주세요.'); return }
     setError('')
     const ok = await confirm({
-      title: '계정을 정말 지울까요?',
+      title: '계정을 정말 삭제할까요?',
       body: `${email} 계정과 모든 섹션, 메모, 그림이 지워지고 되살릴 수 없어요.`,
-      confirmLabel: '계정 지우기',
+      confirmLabel: '계정 삭제',
       danger: true,
     })
     if (!ok) return
     setBusy(true)
-    setStatus('지우는 중')
+    setStatus('삭제하는 중')
     try {
       await api.deleteAccount(password)
       onDeleted()
@@ -129,11 +129,11 @@ function DeleteAccount({ email, confirm, onDeleted }: {
 
   return (
     <form className="form account__section account__danger" onSubmit={submit} noValidate>
-      <h3 className="account__label">계정 지우기</h3>
+      <h3 className="account__label">계정 삭제</h3>
       <p className="account__note">계정과 모든 섹션, 메모, 그림이 지워지고 되살릴 수 없어요.</p>
       <Field name="password" label="현재 패스워드" autoComplete="current-password" error={error} />
       <div className="btn-row">
-        <button type="submit" className="btn btn--primary btn--danger btn--sm" disabled={busy}>계정 지우기</button>
+        <button type="submit" className="btn btn--primary btn--danger btn--sm" disabled={busy}>계정 삭제</button>
       </div>
       <p className="form__status" role="status">{status}</p>
     </form>

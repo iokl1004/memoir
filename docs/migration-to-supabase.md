@@ -44,7 +44,7 @@ Spring 버전의 마지막 코드는 커밋 [`3fc7d07`](https://github.com/iokl1
 | 서버(ImageIO)에서 그림 줄이기 | **브라우저**(canvas)에서 줄여서 올리기 | 함수의 CPU와 전송량을 아껴요. 덤으로 휴대폰 사진의 회전 문제가 사라지고 위치 정보(EXIF)도 빠져요 |
 | 업로드 API에서 형식·용량 확인 | **upload-image Edge Function** | 브라우저는 믿을 수 없어서 형식(파일 앞부분), 5MB, 50MB 한도는 서버에서 봐요. Storage 정책(RLS)으로는 합계 용량을 볼 수 없어요 |
 | `@Scheduled` 고아 그림 청소 | **cleanup-images 함수**를 Actions가 매일 호출 | Storage 파일은 SQL로 지우면 파일이 남아서, Storage API로 지워야 해요 |
-| 계정 지우기 (서비스 코드) | **delete-account 함수** | 사용자 삭제는 관리자 키가 필요하고, 그림 파일이 남아 있으면 사용자를 지울 수 없어서 파일부터 지워요 |
+| 계정 삭제 (서비스 코드) | **delete-account 함수** | 사용자 삭제는 관리자 키가 필요하고, 그림 파일이 남아 있으면 사용자를 지울 수 없어서 파일부터 지워요 |
 | MySQL `LIKE` / `FULLTEXT ngram` 자동 선택 | Postgres `ILIKE` | 50만 건에서 재 보고 고른 방식이었지만, 개인 메모 규모(수천 건)에서는 `ILIKE`로 충분해요. 느려지면 `pg_trgm` 인덱스를 붙여요 |
 | `@Async` 메일 + 해시 토큰 테이블 | Supabase Auth의 패스워드 찾기 | 링크는 `token_hash` 방식이라 다른 기기에서 열어도 돼요. 가입 여부를 숨기는 응답도 그대로예요 |
 | 서버 디스크 백업(cron + mysqldump) | **daily.yml**: `pg_dump` + 그림 파일 → 암호화 → Actions 결과물 | 저장소가 공개라 결과물은 누구나 받을 수 있어서 반드시 암호화해요. 매일 DB를 써서 7일 일시 정지도 막아요 |
