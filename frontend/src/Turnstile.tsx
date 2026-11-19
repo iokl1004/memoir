@@ -44,7 +44,7 @@ export default function Turnstile({ siteKey, onToken }: { siteKey: string; onTok
         theme: document.documentElement.dataset.theme === 'light' ? 'light' : 'dark',
         callback: (token: string) => onTokenRef.current(token),
         'expired-callback': () => onTokenRef.current(null),
-        'error-callback': () => onTokenRef.current(null),
+        'error-callback': () => { onTokenRef.current(null); setFailed(true) },
       })
     }, () => { if (!cancelled) setFailed(true) })
     return () => {
@@ -54,10 +54,10 @@ export default function Turnstile({ siteKey, onToken }: { siteKey: string; onTok
   }, [siteKey])
 
   return (
+    // 보이지 않는 캡차라 칸은 비어 있어요. 실패했을 때만 이유를 보여줘요.
     <div className="captcha">
-      <p className="captcha__label">로봇이 아닌지 확인할게요.</p>
       <div ref={ref} />
-      {failed && <p className="field__error">확인 창을 불러오지 못했어요. 인터넷 연결을 확인하고 새로고침해 주세요.</p>}
+      {failed && <p className="field__error">로봇이 아닌지 확인하지 못했어요. 인터넷 연결을 확인하고 새로고침해 주세요.</p>}
     </div>
   )
 }

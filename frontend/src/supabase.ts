@@ -7,5 +7,5 @@ export const supabase = createClient(
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? 'sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH',
 )
 
-/** Cloudflare Turnstile 사이트 키. 없으면 테스트 키(항상 통과, "테스트 전용" 문구)예요. */
-export const CAPTCHA_SITE_KEY: string = import.meta.env.VITE_CAPTCHA_SITE_KEY ?? '1x00000000000000000000AA'
+/** Cloudflare Turnstile 사이트 키(Invisible 위젯). 없으면 보이지 않는 테스트 키(항상 통과)예요. */
+export const CAPTCHA_SITE_KEY: string = import.meta.env.VITE_CAPTCHA_SITE_KEY ?? '1x00000000000000000000BB'

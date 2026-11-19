@@ -48,7 +48,7 @@ const AUTH_MESSAGES: Record<string, string> = {
   weak_password: '패스워드는 공백 없이 영문, 숫자, 특수문자로 8~64자여야 해요.',
   same_password: '현재 패스워드와 다른 패스워드를 적어 주세요.',
   current_password_invalid: '현재 패스워드가 올바르지 않아요.',
-  captcha_failed: '로봇 확인에 실패했어요. 확인 상자를 다시 풀어 주세요.',
+  captcha_failed: '로봇이 아닌지 확인하지 못했어요. 새로고침한 뒤 다시 시도해 주세요.',
   over_email_send_rate_limit: '메일을 너무 자주 요청했어요. 1분 뒤에 다시 시도해 주세요.',
   over_request_rate_limit: '요청이 너무 많아요. 잠시 뒤 다시 시도해 주세요.',
   otp_expired: '링크가 만료됐거나 이미 썼어요. 링크를 다시 받아 주세요.',

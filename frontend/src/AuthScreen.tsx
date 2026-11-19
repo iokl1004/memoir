@@ -52,9 +52,7 @@ export default function AuthScreen({ onLogin, resetToken }: {
   /** 재설정 메일을 보내고 1분 기다리기를 시작해요. 아직 기다리는 중인 같은 이메일이면 보내지 않아요. */
   async function sendResetMail(email: string) {
     if (email === sentTo && waitSeconds > 0) return false
-    const token = captcha.token
-    captcha.reset() // 캡차 토큰은 한 번만 쓸 수 있어요.
-    await api.requestPasswordReset(email, token)
+    await api.requestPasswordReset(email, await captcha.take())
     setSentTo(email)
     setResendAt(Date.now() + RESEND_SECONDS * 1000)
     setNow(Date.now())
@@ -62,10 +60,6 @@ export default function AuthScreen({ onLogin, resetToken }: {
   }
 
   async function resend() {
-    if (captcha.missing) {
-      setStatus('아래 확인 상자를 먼저 풀어 주세요.')
-      return
-    }
     setBusy(true)
     try {
       await sendResetMail(sentTo)
@@ -106,10 +100,6 @@ export default function AuthScreen({ onLogin, resetToken }: {
       setStatus(`확인할 칸이 ${Object.keys(next).length}개 있어요.`)
       return
     }
-    if (askEmail && captcha.missing) {
-      setStatus('아래 확인 상자를 먼저 풀어 주세요.')
-      return
-    }
 
     setBusy(true)
     setStatus(BUSY[mode] ?? '')
@@ -121,8 +111,7 @@ export default function AuthScreen({ onLogin, resetToken }: {
         await api.confirmPasswordReset(resetToken ?? '', password)
         go('login', '패스워드를 변경했어요. 새 패스워드로 로그인해 주세요.')
       } else {
-        const token = captcha.token
-        captcha.reset() // 캡차 토큰은 한 번만 쓸 수 있어요.
+        const token = await captcha.take()
         onLogin(mode === 'signup' ? await api.signup(email, password, token) : await api.login(email, password, token))
       }
     } catch (err) {
@@ -156,7 +145,7 @@ export default function AuthScreen({ onLogin, resetToken }: {
         {mode === 'sent' ? (
           <div className="auth__form auth__sent">
             <button type="button" className="btn btn--primary auth__submit" onClick={() => go('login')}>로그인으로 돌아가기</button>
-            {waitSeconds === 0 && captcha.widget}
+            {captcha.widget}
             <button type="button" className="btn btn--secondary auth__submit" onClick={resend}
                     disabled={busy || waitSeconds > 0} aria-describedby="resend-wait">
               메일 다시 보내기
