@@ -39,7 +39,7 @@
 
 ```
 supabase/
- ├─ migrations/        테이블·RLS(1), 섹션·메모·검색 함수(2), 그림 버킷(3), 계정 삭제용 패스워드 확인(4)
+ ├─ migrations/        테이블·RLS(1), 섹션·메모·검색 함수(2), 그림 버킷(3), 계정 삭제용 패스워드 확인(4), 개수 제한·search_path(5)
  ├─ functions/
  │   ├─ upload-image     그림 올리기: 형식 확인, 5MB·50MB 한도
  │   ├─ delete-account   패스워드 확인 → 그림 파일 → 계정(표는 연쇄 삭제)
@@ -106,7 +106,7 @@ npm run test:db                   # 통합 테스트 (로컬 Supabase가 켜져 
    ```
 2. **Supabase 대시보드 설정** (Authentication)
    - URL Configuration: Site URL을 Vercel 주소로
-   - Sign In / Providers → Email: Confirm email 끄기, Secure password change와 "현재 패스워드 요구" 켜기, 패스워드 최소 8자
+   - Sign In / Providers → Email: Confirm email 끄기, "현재 패스워드 요구" 켜기, Secure password change는 끄기(켜면 메일 재인증이 필요해져요), 패스워드 최소 8자
    - Emails → SMTP: Gmail(`smtp.gmail.com:587`, memoir 전용 계정, 앱 비밀번호), 보내는 간격 60초
    - Emails → Templates → Reset password: `supabase/templates/recovery.html` 내용과 제목을 붙여넣기
    - Attack Protection: CAPTCHA 켜기(Turnstile, Secret Key)

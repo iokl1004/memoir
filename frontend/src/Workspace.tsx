@@ -113,7 +113,7 @@ export default function Workspace({ user, onLogout }: { user: User; onLogout: ()
     setFilter(next)
   }
 
-  /** 검색 미리보기에서 고른 메모: 그 메모의 섹션으로 옮겨 가서 목록에서도 고른 상태로 열어요. */
+  /** 검색(미리보기, 결과 목록)에서 고른 메모: 그 메모의 섹션으로 옮겨 가서 목록에서도 고른 상태로 열어요. */
   async function openFromSearch(memo: MemoSummary) {
     if (!(await confirmLeave())) return
     setDirty(false)
@@ -340,7 +340,12 @@ export default function Workspace({ user, onLogout }: { user: User; onLogout: ()
             sort={sort}
             selectedId={selection.kind === 'memo' ? selection.id : null}
             sectionLabel={filter.sectionId === undefined ? sectionPath : undefined}
-            onOpen={id => select({ kind: 'memo', id })}
+            onOpen={id => {
+              // 검색 결과에서 연 메모는 미리보기처럼 그 메모의 섹션으로 옮겨 가요.
+              const memo = searching ? memos.find(m => m.id === id) : undefined
+              if (memo) openFromSearch(memo)
+              else select({ kind: 'memo', id })
+            }}
             onDelete={deleteMemos}
             onClearChecked={() => setChecked(new Set())}
             onReorder={reorder}
