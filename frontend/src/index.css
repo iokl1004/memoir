@@ -63,7 +63,8 @@ html[data-buttons="arrow"] .account .btn::after { content: none; }
 .btn.btn--danger { background: var(--error); color: #fff; }
 html:not([data-motion="off"]) .btn.btn--danger:hover { background: color-mix(in oklab, var(--error) 86%, var(--ink)); }
 
-.sections, .list, .editor__body {
+/* 바탕이 투명한 얇은 스크롤바. 계정 창은 둥근 모서리가 회색 바탕에 가려 각져 보이지 않게 해요. */
+.sections, .list, .editor__body, .account {
   scrollbar-width: thin; scrollbar-color: color-mix(in oklab, var(--ink) 22%, transparent) transparent;
 }
 
