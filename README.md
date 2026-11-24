@@ -25,6 +25,23 @@
 - **계정**: 패스워드 찾기(메일로 30분짜리 1회용 링크), 패스워드 변경, 계정 삭제. 가입·로그인·패스워드 찾기에는 보이지 않는 캡차(Cloudflare Turnstile Invisible)가 붙어요. 화면에는 아무것도 나오지 않아요.
 - **라이트/다크 모드**
 
+## 🛠 문제 해결 기록
+
+### 1. 검색이 가장 느릴 때 1.3초 → 27ms (메모 50만 건)
+Spring + MySQL 시절, 사용자 5명 × 메모 10만 건을 넣고 LIKE와 FULLTEXT(ngram) 검색을 실제 HTTP로 비교했어요.
+- FULLTEXT는 드문 단어에서 15배, 없는 단어에서 37배 빨랐지만, 흔한 단어는 6배, 섹션·기간 조건을 함께 걸면 31~66배 느렸어요. `EXPLAIN ANALYZE`로 보니 FULLTEXT 인덱스에 `user_id`가 없어서, 모든 사용자의 일치 26만 건을 꺼낸 뒤 내 것만 거르고 정렬하고 있었어요.
+- LIKE의 비용은 검색이 아니라 전체 건수 COUNT에서 나왔어요. 첫 페이지 20건은 0.15ms인데 건수를 세는 데 216ms가 들었어요.
+- 그래서 **건수는 1,000건까지만 세고**, 조건과 단어 빈도를 보고 **LIKE와 FULLTEXT 중 빠른 쪽을 고르게** 했더니 가장 느린 검색이 1,337ms에서 27ms가 됐어요.
+- 측정 중에 ngram 기본 불용어 때문에 `data`를 검색하면 0건이 나오는 함정도 찾아서 인덱스에서 불용어를 껐어요.
+
+지금의 Postgres 버전도 건수를 1,000건까지만 세는 방식을 그대로 이어받았어요. 전체 측정 기록: [bench/README.md (Spring 버전)](https://github.com/iokl1004/memoir/blob/3fc7d07/bench/README.md)
+
+### 2. 무료로 띄울 서버가 없었어요
+Oracle Cloud 무료 VM을 한국 리전에서 받지 못했고, 일본 리전은 한 번 정하면 바꿀 수 없는 홈 리전이 부담이었어요. 방법들을 비교한 뒤 Spring을 내려놓고 Supabase(서울) + Vercel로 옮겼어요. 권한 검사는 RLS와 트리거로, 그림은 Storage와 서명 주소로 다시 설계했어요. 자세한 비교와 잃은 것, 얻은 것: [docs/migration-to-supabase.md](docs/migration-to-supabase.md)
+
+### 3. GitHub이 로컬 테스트 키를 비밀 값으로 막았어요
+통합 테스트에 로컬 Supabase의 기본 Secret key를 적었더니 GitHub Push Protection이 푸시를 거절했어요. 로컬 전용 값이어도 실제 키와 형식이 같기 때문이에요. 키를 코드에 적지 않고 테스트가 시작할 때 `supabase status -o env`에서 읽어 오게 바꿨어요(`frontend/db-tests/helpers.ts`). CI도 같은 방식으로 돌아요.
+
 ## 기술 스택
 
 | | |
