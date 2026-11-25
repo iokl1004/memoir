@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { api, ApiError, type User } from './api'
 import { useCaptcha } from './captcha'
 import ThemeToggle from './ThemeToggle'
+import { AUTO_LOGIN_KEY, SAVED_EMAIL_KEY } from './supabase'
 
 /** login·signup: 로그인과 가입, forgot: 패스워드 찾기(메일 보내기), sent: 메일을 보낸 뒤, reset: 메일 링크로 새 패스워드 정하기 */
 type Mode = 'login' | 'signup' | 'forgot' | 'sent' | 'reset'
@@ -70,6 +71,7 @@ export default function AuthScreen({ onLogin, resetToken }: {
     setBusy(false)
   }
   const [busy, setBusy] = useState(false)
+  const savedEmail = localStorage.getItem(SAVED_EMAIL_KEY) ?? ''
   const captcha = useCaptcha()
   const emailRef = useRef<HTMLInputElement>(null)
   const passwordRef = useRef<HTMLInputElement>(null)
@@ -112,7 +114,14 @@ export default function AuthScreen({ onLogin, resetToken }: {
         go('login', '패스워드를 변경했어요. 새 패스워드로 로그인해 주세요.')
       } else {
         const token = await captcha.take()
-        onLogin(mode === 'signup' ? await api.signup(email, password, token) : await api.login(email, password, token))
+        if (mode === 'login') {
+          // 로그인 정보가 어디에 저장될지(supabase.ts의 authStorage) 로그인 전에 정해요.
+          localStorage.setItem(AUTO_LOGIN_KEY, form.has('auto') ? '1' : '0')
+          const user = await api.login(email, password, token)
+          if (form.has('remember')) localStorage.setItem(SAVED_EMAIL_KEY, email)
+          else localStorage.removeItem(SAVED_EMAIL_KEY)
+          onLogin(user)
+        } else onLogin(await api.signup(email, password, token))
       }
     } catch (err) {
       setStatus(err instanceof ApiError ? err.message : '서버와 연결하지 못했어요.')
@@ -162,6 +171,7 @@ export default function AuthScreen({ onLogin, resetToken }: {
               <div className="field field--full">
                 <label htmlFor="email">이메일</label>
                 <input ref={emailRef} id="email" name="email" type="email" autoComplete="email" autoFocus={mode === 'forgot'}
+                       defaultValue={mode === 'login' ? savedEmail : undefined}
                        aria-invalid={!!errors.email} aria-describedby={errors.email ? 'email-error' : undefined} />
                 {errors.email && <p id="email-error" className="field__error">{errors.email}</p>}
               </div>
@@ -188,9 +198,15 @@ export default function AuthScreen({ onLogin, resetToken }: {
             )}
             {askEmail && captcha.widget}
             {mode === 'login' && (
-              <p className="auth__forgot">
-                <button type="button" className="textbtn" onClick={() => go('forgot')}>패스워드를 잊었어요</button>
-              </p>
+              <div className="auth__options">
+                <label className="check">
+                  <input type="checkbox" name="remember" defaultChecked={!!savedEmail} /> 아이디 저장
+                </label>
+                <label className="check">
+                  <input type="checkbox" name="auto" defaultChecked={localStorage.getItem(AUTO_LOGIN_KEY) !== '0'} /> 자동 로그인
+                </label>
+                <button type="button" className="textbtn auth__forgot" onClick={() => go('forgot')}>패스워드를 잊었어요</button>
+              </div>
             )}
             <div className="btn-row">
               <button className="btn btn--primary auth__submit" type="submit" disabled={busy}>{SUBMIT[mode]}</button>

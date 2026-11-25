@@ -118,7 +118,11 @@ html:not([data-motion="off"]) .btn.btn--danger:hover { background: color-mix(in 
 .auth__form .field input { height: 48px; }
 .auth__submit { width: 100%; }
 .auth__switch { font-size: var(--t-small); color: var(--muted); }
-.auth__forgot { display: flex; justify-content: flex-end; margin-top: calc(-1 * var(--s-2)); }
+.auth__options { display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--s-4); margin-top: calc(-1 * var(--s-2)); }
+.auth__forgot { margin-left: auto; }
+/* 손가락으로 누르기 좋게 글자까지 누르는 영역이고, 높이는 44px */
+.check { display: inline-flex; align-items: center; gap: var(--s-2); min-height: 44px; font-size: var(--t-small); cursor: pointer; }
+.check input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); cursor: pointer; }
 .auth__email { color: var(--ink); font-weight: 500; overflow-wrap: anywhere; }
 /* captcha (Cloudflare Turnstile Invisible): empty unless it fails */
 .captcha { display: grid; gap: var(--s-2); }
