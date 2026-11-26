@@ -29,7 +29,20 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - run: npx --yes @tauri-apps/cli@2.12.6 build --bundles nsis
+      # 태그 번호와 앱 버전이 다르면 설치 파일 안의 버전과 릴리스 이름이 어긋나서 멈춰요.
+      - name: 버전 확인
+        shell: pwsh
+        run: |
+          $conf = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $cargo = (Select-String -Path src-tauri/Cargo.toml -Pattern '^version = "(.+)"' | Select-Object -First 1).Matches[0].Groups[1].Value
+          if ($conf -ne $cargo) { throw "tauri.conf.json($conf)과 Cargo.toml($cargo) 버전이 달라요" }
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$conf") { throw "태그 $env:GITHUB_REF_NAME 와 앱 버전 v$conf 가 달라요" }
+      # Cargo.lock이 저장소에 있으면 그 버전으로만 받아요(--locked). 없으면 새로 만들어 결과물에 담아요.
+      - name: 빌드
+        shell: pwsh
+        run: |
+          $runner = if (Test-Path src-tauri/Cargo.lock) { @('--', '--locked') } else { @() }
+          npx --yes @tauri-apps/cli@2.12.6 build --bundles nsis @runner
       # 홈페이지 버튼이 항상 같은 주소(releases/latest/download/memoir-setup.exe)를 가리키게 이름을 고정해요.
       - name: 파일 이름 고정
         shell: pwsh
@@ -58,7 +71,7 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           sha=$(sha256sum memoir-setup.exe | cut -d' ' -f1)
-          gh release create "$TAG" memoir-setup.exe --repo "$GITHUB_REPOSITORY" --title "memoir PC 앱 $TAG" \
+          gh release create "$TAG" memoir-setup.exe src-tauri/Cargo.lock --repo "$GITHUB_REPOSITORY" --title "memoir PC 앱 $TAG" \
             --notes "Windows 10/11용 설치 파일이에요. 처음 실행할 때 'Windows의 PC 보호' 창이 뜨면 '추가 정보 → 실행'을 눌러 주세요.
 
           SHA-256: \`$sha\`"
