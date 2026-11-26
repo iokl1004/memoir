@@ -1,11 +1,14 @@
 name: PC 앱
 
 # 태그(v1.0.0)를 푸시하면 Windows 설치 파일을 만들어 GitHub Releases에 올려요.
-# 손으로 돌리면(workflow_dispatch) 만들기만 하고 Actions 결과물(artifact)로 남겨요.
+# main에 앱 코드를 푸시하거나 손으로 돌리면(workflow_dispatch) 만들기만 하고 Actions 결과물(artifact)로 남겨요.
 # 태그 번호는 desktop/src-tauri/tauri.conf.json, Cargo.toml의 version과 같게 맞춰요.
 on:
   push:
     tags: ['v*']
+    # 앱 코드가 바뀌면 태그 전에 빌드가 되는지 먼저 확인해요(릴리스에는 올리지 않아요).
+    branches: [main]
+    paths: ['desktop/**', '.github/workflows/desktop.yml']
   workflow_dispatch:
 
 # 빌드는 읽기 권한만. 쓰기 권한은 아래 release 작업에만 줘요.
