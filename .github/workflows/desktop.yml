@@ -1,0 +1,43 @@
+name: PC 앱
+
+# 태그(v1.0.0)를 푸시하면 Windows 설치 파일을 만들어 GitHub Releases에 올려요.
+# 손으로 돌리면(workflow_dispatch) 만들기만 하고 Actions 결과물(artifact)로 남겨요.
+# 태그 번호는 desktop/src-tauri/tauri.conf.json, Cargo.toml의 version과 같게 맞춰요.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Windows 설치 파일
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npx --yes @tauri-apps/cli@2.12.6 build --bundles nsis
+      # 홈페이지 버튼이 항상 같은 주소(releases/latest/download/memoir-setup.exe)를 가리키게 이름을 고정해요.
+      - name: 파일 이름 고정
+        shell: pwsh
+        run: Copy-Item (Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1).FullName memoir-setup.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: memoir-setup
+          path: desktop/memoir-setup.exe
+      - name: 릴리스에 올리기
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create ${{ github.ref_name }} memoir-setup.exe --title "memoir PC 앱 ${{ github.ref_name }}" --notes "Windows 10/11용 설치 파일이에요. 처음 실행할 때 'Windows의 PC 보호' 창이 뜨면 '추가 정보 → 실행'을 눌러 주세요."

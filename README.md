@@ -24,6 +24,7 @@
 - **휴대폰**: 섹션은 왼쪽 서랍으로, 섹션 메뉴는 길게 누르기로, 고른 메모는 아래쪽 막대에서 옮기거나 지워요.
 - **계정**: 아이디 저장, 자동 로그인(끄면 브라우저를 닫을 때 로그아웃), 패스워드 찾기(메일로 30분짜리 1회용 링크), 패스워드 변경, 계정 삭제. 가입·로그인·패스워드 찾기에는 보이지 않는 캡차(Cloudflare Turnstile Invisible)가 붙어요. 화면에는 아무것도 나오지 않아요.
 - **라이트/다크 모드**
+- **Windows PC 앱**: 로그인 화면과 계정 창의 "Windows용 PC 앱 받기"로 설치하면 바탕화면 아이콘으로 독립된 창에서 열려요. 사이트를 그대로 띄우는 창이라 사이트를 배포하면 앱도 바로 바뀌어요.
 
 ## 🛠 문제 해결 기록
 
@@ -73,6 +74,7 @@ frontend/src
  ├─ MemoEditor.tsx  TipTap 편집기 (처음 열 때 불러와요)
  └─ sectionTree.ts  평평한 섹션 목록 → 트리, 정렬
 frontend/db-tests  로컬 Supabase에 대고 도는 통합 테스트
+desktop/src-tauri  Windows PC 앱(Tauri 2): memoir-note.vercel.app을 여는 창, 아이콘
 ```
 
 설계에서 신경 쓴 점
@@ -129,6 +131,7 @@ npm run test:db                   # 통합 테스트 (로컬 Supabase가 켜져 
    - Attack Protection: CAPTCHA 켜기(Turnstile, Secret Key)
 3. **Vercel**: 저장소를 가져오고 Root Directory를 `frontend`로, 환경 변수 `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_CAPTCHA_SITE_KEY`를 넣어요.
 4. **GitHub Actions 비밀 값**: `.github/workflows/daily.yml` 맨 위에 적은 5개를 넣으면 매일 청소와 백업이 돌아요.
+5. **PC 앱 내기**: `desktop/src-tauri`의 `tauri.conf.json`, `Cargo.toml` 버전을 올리고 같은 번호로 태그를 푸시하면(`git tag v1.0.1 && git push origin v1.0.1`) `.github/workflows/desktop.yml`이 설치 파일을 만들어 Releases에 `memoir-setup.exe`로 올려요. 코드 서명은 하지 않아서 처음 실행할 때 Windows SmartScreen 경고가 떠요. 창 안의 화면은 사이트라서, 화면만 바뀐 배포에는 새 설치 파일이 필요 없어요.
 
 ## 디자인
 

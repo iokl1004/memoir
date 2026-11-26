@@ -1,0 +1,32 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "memoir",
+  "version": "1.0.0",
+  "identifier": "io.github.iokl1004.memoir",
+  "build": {
+    "frontendDist": "https://memoir-note.vercel.app"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "memoir",
+        "url": "https://memoir-note.vercel.app/?app=desktop",
+        "width": 1280,
+        "height": 820,
+        "minWidth": 380,
+        "minHeight": 560,
+        "center": true
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "shortDescription": "섹션별로 나눠 쓰고 다시 찾는 메모장",
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"],
+    "windows": {
+      "webviewInstallMode": { "type": "downloadBootstrapper" },
+      "nsis": { "installMode": "currentUser", "languages": ["Korean"] }
+    }
+  }
+}

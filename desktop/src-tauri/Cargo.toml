@@ -1,0 +1,19 @@
+[package]
+name = "memoir"
+version = "1.0.0"
+description = "memoir PC 앱: memoir-note.vercel.app을 독립된 창으로 열어요"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+
+# 설치 파일을 작게
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

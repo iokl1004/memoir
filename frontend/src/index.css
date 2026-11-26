@@ -123,6 +123,9 @@ html:not([data-motion="off"]) .btn.btn--danger:hover { background: color-mix(in 
 /* 손가락으로 누르기 좋게 글자까지 누르는 영역이고, 높이는 44px */
 .check { display: inline-flex; align-items: center; gap: var(--s-2); min-height: 44px; font-size: var(--t-small); cursor: pointer; }
 .check input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.desktop-dl { display: grid; justify-items: start; gap: var(--s-1); padding-top: var(--s-4); border-top: 1px solid var(--line); }
+.account .desktop-dl { padding-top: 0; border-top: 0; }
+.desktop-dl .textbtn { padding: 0; }
 .auth__email { color: var(--ink); font-weight: 500; overflow-wrap: anywhere; }
 /* captcha (Cloudflare Turnstile Invisible): empty unless it fails */
 .captcha { display: grid; gap: var(--s-2); }

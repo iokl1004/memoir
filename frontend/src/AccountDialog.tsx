@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { api, ApiError, type User } from './api'
 import { useConfirm } from './confirm'
+import DesktopDownload from './DesktopDownload'
 import { IMAGE_QUOTA_MB } from './images'
 
 const PASSWORD_RULE = /^[\x21-\x7E]{8,64}$/
@@ -32,6 +33,7 @@ export default function AccountDialog({ user, onClose, onDeleted }: {
       </div>
       <p className="account__email">{user.email}</p>
       <ImageUsage />
+      <DesktopDownload title="PC 앱" />
       <ChangePassword />
       <DeleteAccount email={user.email} confirm={confirm} onDeleted={onDeleted} />
     </dialog>

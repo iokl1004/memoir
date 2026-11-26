@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { api, ApiError, type User } from './api'
 import { useCaptcha } from './captcha'
+import DesktopDownload from './DesktopDownload'
 import ThemeToggle from './ThemeToggle'
 import { AUTO_LOGIN_KEY, SAVED_EMAIL_KEY } from './supabase'
 
@@ -225,6 +226,7 @@ export default function AuthScreen({ onLogin, resetToken }: {
               <button type="button" className="textbtn" onClick={() => go('login')}>로그인하기</button></>
           )}
         </p>
+        {mode === 'login' && <DesktopDownload />}
       </div>
     </main>
   )
