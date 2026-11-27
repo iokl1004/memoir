@@ -1,7 +1,7 @@
 // 오프라인 편집의 계산 부분. 서버(Supabase)를 부르지 않아서 시험(offline.test.ts)으로 확인해요.
 // 화면은 언제나 "서버에서 받은 사본(snapshot) + 아직 보내지 않은 변경(outbox)"을 이 기기에서 계산해 보여줘요.
 // 서버 함수(supabase/migrations)의 규칙과 문구를 그대로 따라 해서, 오프라인에서도 같은 오류가 나요.
-import type { Memo, MemoFilter, MemoPage, MemoSort, Section } from './api'
+import type { Memo, MemoFilter, MemoPage, MemoSort, MemoSummary, Section } from './api'
 
 /** 화면에 그대로 보여줄 문구와 HTTP 상태. 401이면 로그인 화면으로 돌아가요. */
 export class ApiError extends Error {
@@ -25,12 +25,17 @@ export const tempId = () => -Math.floor(Math.random() * 2 ** 52) - 1
 export type Op =
   | { type: 'createSection'; id: number; name: string; parentId: number | null; at: string }
   | { type: 'renameSection'; id: number; name: string }
-  | { type: 'deleteSection'; id: number }
+  /** 하위 섹션까지 지우고, 안의 메모는 미분류로 옮겨 휴지통에 넣어요. (at은 예전 기록에는 없어요) */
+  | { type: 'deleteSection'; id: number; at?: string }
   | { type: 'moveSection'; id: number; parentId: number | null; beforeId: number | null }
   | { type: 'saveMemo'; id: number; body: MemoBody; base: Base | null; at: string }
   | { type: 'moveMemos'; ids: number[]; sectionId: number; at: string }
-  /** bases: 지울 때 알고 있던 서버 수정 시각. 그 뒤에 다른 기기에서 고친 메모는 지우지 않아요. */
-  | { type: 'deleteMemos'; ids: number[]; bases: Record<number, string> }
+  /** 휴지통으로. bases: 지울 때 알고 있던 서버 수정 시각. 그 뒤에 다른 기기에서 고친 메모는 지우지 않아요. */
+  | { type: 'deleteMemos'; ids: number[]; bases: Record<number, string>; at?: string }
+  | { type: 'restoreMemos'; ids: number[] }
+  /** 휴지통에서 완전히 지워요. */
+  | { type: 'purgeMemos'; ids: number[] }
+  | { type: 'pinMemos'; ids: number[]; pinned: boolean }
   | { type: 'moveMemo'; id: number; afterId: number | null; beforeId: number | null }
   | { type: 'image'; id: number }
 
@@ -47,7 +52,7 @@ const time = (s: string) => Date.parse(s)
 
 export const toMemo = (r: MemoRow): Memo => ({
   id: r.id, sectionId: r.sectionId, title: r.title, content: r.content, contentHtml: r.contentHtml,
-  createdAt: r.createdAt, updatedAt: r.updatedAt,
+  createdAt: r.createdAt, updatedAt: r.updatedAt, pinned: r.pinned, deletedAt: r.deletedAt,
 })
 
 export const cloneData = (d: Data): Data => ({ sections: new Map(d.sections), memos: new Map(d.memos) })
@@ -111,8 +116,12 @@ export function applyOp(d: Data, op: Op, r: Resolve): void {
       if (!s) throw bad(NO_SECTION)
       if (s.isDefault) throw bad('미분류 섹션은 이름을 바꾸거나 삭제할 수 없어요.')
       const ids = subtree(d, s.id)
+      const fallback = defaultSection(d)!.id
       for (const id of ids) d.sections.delete(id)
-      for (const m of d.memos.values()) if (ids.has(m.sectionId)) d.memos.delete(m.id)
+      const at = op.at ?? new Date().toISOString()
+      for (const m of d.memos.values()) {
+        if (ids.has(m.sectionId)) d.memos.set(m.id, { ...m, sectionId: fallback, deletedAt: m.deletedAt ?? at })
+      }
       return
     }
     case 'moveSection': {
@@ -138,14 +147,15 @@ export function applyOp(d: Data, op: Op, r: Resolve): void {
       if (sectionId === undefined) throw bad(NO_SECTION)
       const id = r(op.id)
       const old = d.memos.get(id)
-      const fields = { sectionId, title: memoTitle(b.title), content: b.content, contentHtml: b.contentHtml, updatedAt: op.at }
+      // 고치면 휴지통에서 나와요(save_memo와 같아요).
+      const fields = { sectionId, title: memoTitle(b.title), content: b.content, contentHtml: b.contentHtml, updatedAt: op.at, deletedAt: null }
       if (old) {
         d.memos.set(id, { ...old, ...fields })
         return
       }
       if (d.memos.size >= 10000) throw bad('메모는 한 사람에 10,000개까지 쓸 수 있어요. 안 쓰는 메모를 지운 뒤 다시 시도해 주세요.')
       const position = Math.min(0, ...[...d.memos.values()].map(m => m.position)) - 1024
-      d.memos.set(id, { id, position, createdAt: op.at, ...fields })
+      d.memos.set(id, { id, position, createdAt: op.at, pinned: false, ...fields })
       return
     }
     case 'moveMemos': {
@@ -158,8 +168,20 @@ export function applyOp(d: Data, op: Op, r: Resolve): void {
       return
     }
     case 'deleteMemos':
-      for (const id of op.ids) d.memos.delete(r(id))
+    case 'restoreMemos':
+    case 'purgeMemos':
+    case 'pinMemos': {
+      const at = (op.type === 'deleteMemos' && op.at) || new Date().toISOString()
+      for (const raw of op.ids) {
+        const m = d.memos.get(r(raw))
+        if (!m) continue
+        if (op.type === 'deleteMemos' && !m.deletedAt) d.memos.set(m.id, { ...m, deletedAt: at })
+        if (op.type === 'restoreMemos' && m.deletedAt) d.memos.set(m.id, { ...m, deletedAt: null })
+        if (op.type === 'purgeMemos' && m.deletedAt) d.memos.delete(m.id)
+        if (op.type === 'pinMemos' && m.pinned !== op.pinned) d.memos.set(m.id, { ...m, pinned: op.pinned })
+      }
       return
+    }
     case 'moveMemo': {
       const m = d.memos.get(r(op.id))
       if (!m) return
@@ -189,7 +211,7 @@ export function replay(snapshot: Data, ops: Op[], r: Resolve): Data {
 /** list_sections와 같은 순서(미분류 먼저, 정한 순서)와 메모 수 */
 export function listSections(d: Data): Section[] {
   const counts = new Map<number, number>()
-  for (const m of d.memos.values()) counts.set(m.sectionId, (counts.get(m.sectionId) ?? 0) + 1)
+  for (const m of d.memos.values()) if (!m.deletedAt) counts.set(m.sectionId, (counts.get(m.sectionId) ?? 0) + 1)
   return [...d.sections.values()]
     .sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || a.position - b.position || a.id - b.id)
     .map(s => ({ id: s.id, parentId: s.parentId, name: s.name, isDefault: s.isDefault, createdAt: s.createdAt, memoCount: counts.get(s.id) ?? 0 }))
@@ -218,19 +240,26 @@ export function searchMemos(d: Data, f: MemoFilter, sort: MemoSort, page: number
   const from = f.from ? kstDay(f.from) : -Infinity
   const to = f.to ? kstDay(f.to, 1) : Infinity
   const hits = [...d.memos.values()].filter(m => {
+    if (m.deletedAt) return false
     if (f.sectionId !== undefined && m.sectionId !== f.sectionId) return false
     const created = time(m.createdAt)
     if (created < from || created >= to) return false
     const title = m.title.toLowerCase()
     const content = m.content.toLowerCase()
     return terms.every(t => title.includes(t) || content.includes(t))
-  }).sort(SORTS[sort])
-  const items = hits.slice(page * size, (page + 1) * size).map(m => ({
-    id: m.id, sectionId: m.sectionId, title: m.title, createdAt: m.createdAt, updatedAt: m.updatedAt,
-    preview: m.content.replace(/\s+/g, ' ').trim().slice(0, 100),
-  }))
+  }).sort((a, b) => Number(b.pinned) - Number(a.pinned) || SORTS[sort](a, b)) // 고정한 메모는 맨 위
+  const items = hits.slice(page * size, (page + 1) * size).map(summary)
   return { items, page, total: hits.length, totalCapped: false, hasNext: hits.length > (page + 1) * size }
 }
+
+const summary = (m: MemoRow): MemoSummary => ({
+  id: m.id, sectionId: m.sectionId, title: m.title, createdAt: m.createdAt, updatedAt: m.updatedAt,
+  pinned: m.pinned, deletedAt: m.deletedAt, preview: m.content.replace(/\s+/g, ' ').trim().slice(0, 100),
+})
+
+/** 휴지통: 최근에 넣은 것부터 */
+export const trashMemos = (d: Data): MemoSummary[] =>
+  [...d.memos.values()].filter(m => m.deletedAt).sort((a, b) => time(b.deletedAt!) - time(a.deletedAt!) || b.id - a.id).map(summary)
 
 /** 서버에 보내는 일. 시험에서는 가짜로 바꿔 끼워요. */
 export type Remote = {
@@ -247,6 +276,9 @@ export type Remote = {
   moveMemos(ids: number[], sectionId: number): Promise<void>
   deleteMemos(ids: number[]): Promise<void>
   moveMemo(id: number, afterId: number | null, beforeId: number | null): Promise<void>
+  restoreMemos(ids: number[]): Promise<void>
+  purgeMemos(ids: number[]): Promise<void>
+  pinMemos(ids: number[], pinned: boolean): Promise<void>
   uploadImage(blob: Blob): Promise<number>
 }
 
@@ -407,6 +439,16 @@ export async function flushOp(op: Op, remote: Remote, ctx: FlushContext): Promis
       if (kept.length) ctx.notice(`다른 기기에서 고친 메모 ${kept.length}개는 지우지 않고 남겨 뒀어요.`)
       if (ids.length) await remote.deleteMemos(ids)
       return [{ apply: { ...op, ids: wanted.filter(id => !kept.includes(id)) } }]
+    }
+    case 'restoreMemos':
+    case 'purgeMemos':
+    case 'pinMemos': {
+      const ids = [...(await remote.memoStamps(op.ids.filter(known).map(r))).keys()]
+      if (!ids.length) return []
+      if (op.type === 'restoreMemos') await remote.restoreMemos(ids)
+      else if (op.type === 'purgeMemos') await remote.purgeMemos(ids)
+      else await remote.pinMemos(ids, op.pinned)
+      return [{ apply: { ...op, ids } }]
     }
     case 'moveMemo': {
       if (!known(op.id) || (op.afterId !== null && !known(op.afterId)) || (op.beforeId !== null && !known(op.beforeId))) return []

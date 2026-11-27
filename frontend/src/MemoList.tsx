@@ -6,13 +6,15 @@ import { dateFmt, touchOnly } from './shared'
 // 터치 화면에서는 길게 누르기를 쓰려고 끌기를 꺼요(길게 누르면 브라우저가 끌기를 시작해요).
 const LONG_PRESS_MS = 500
 
-export default function MemoList({ memos, sort, selectedId, sectionLabel, onOpen, onDelete, onReorder, onDragMemos, checked, onToggle, onClearChecked }: {
+export default function MemoList({ memos, sort, selectedId, sectionLabel, onOpen, onDelete, onPin, onReorder, onDragMemos, checked, onToggle, onClearChecked }: {
   memos: MemoSummary[]
   sort: MemoSort
   selectedId: number | null
   sectionLabel?: (sectionId: number) => string | undefined
   onOpen: (id: number) => void
   onDelete: (memos: MemoSummary[]) => void
+  /** 맨 위에 고정하거나 풀어요. */
+  onPin: (memos: MemoSummary[], pinned: boolean) => void
   onReorder: (from: number, to: number) => void
   /** 메모를 끌기 시작하면 끄는 메모들, 끝나면 null. 사이드바 섹션에 놓을 수 있게 알려줘요. */
   onDragMemos: (memos: MemoSummary[] | null) => void
@@ -129,7 +131,10 @@ export default function MemoList({ memos, sort, selectedId, sectionLabel, onOpen
           >
             {selecting && <span className="memo-item__check" data-checked={checked.has(m.id) || undefined} aria-hidden="true" />}
             {custom && <span className="memo-item__grip" aria-hidden="true">⋮⋮</span>}
-            <span className="memo-item__title">{m.title}</span>
+            <span className="memo-item__title">
+              {m.pinned && <span className="memo-item__pin">고정</span>}
+              {m.title}
+            </span>
             {m.preview && <span className="memo-item__preview">{m.preview}</span>}
             <span className="memo-item__meta">
               {showUpdated ? '수정 ' : '작성 '}
@@ -145,11 +150,16 @@ export default function MemoList({ memos, sort, selectedId, sectionLabel, onOpen
       {menu && (
         <ContextMenu x={menu.x} y={menu.y} onClose={() => setMenu(null)}
                      label={menu.group.length === 1 ? `'${menu.group[0].title}' 메모 메뉴` : `고른 메모 ${menu.group.length}개 메뉴`}
-                     items={[{
-                       label: menu.group.length === 1 ? '메모 지우기' : `고른 메모 ${menu.group.length}개 지우기`,
-                       danger: true,
-                       run: () => onDelete(menu.group),
-                     }]} />
+                     items={[
+                       menu.group.every(x => x.pinned)
+                         ? { label: '고정 풀기', run: () => onPin(menu.group, false) }
+                         : { label: '맨 위에 고정', run: () => onPin(menu.group, true) },
+                       {
+                         label: menu.group.length === 1 ? '휴지통으로' : `고른 메모 ${menu.group.length}개 휴지통으로`,
+                         danger: true,
+                         run: () => onDelete(menu.group),
+                       },
+                     ]} />
       )}
     </>
   )

@@ -8,7 +8,7 @@ import SearchBar from './SearchBar'
 import SectionNav from './SectionNav'
 import SectionOptions from './SectionOptions'
 import { buildTree, subtreeIds, type SectionNode, type SectionSort } from './sectionTree'
-import { touchOnly, useMediaQuery } from './shared'
+import { dateFmt, touchOnly, useMediaQuery } from './shared'
 import SortPicker from './SortPicker'
 import { onStore, resolve, store, useSyncStatus } from './store'
 import { joinMemoSort, MEMO_SORT_FIELDS, savedSectionSort, savedSort, splitMemoSort } from './sorting'
@@ -60,6 +60,14 @@ export default function Workspace({ user, onLogout }: { user: User; onLogout: ()
   /** 이 기기의 저장소가 바뀔 때마다(내가 고침, 서버에서 받음, 다른 탭) 올려서 목록을 다시 읽어요. */
   const [rev, setRev] = useState(0)
   const sync = useSyncStatus()
+  const [trashOpen, setTrashOpen] = useState(false)
+  const [trash, setTrash] = useState<MemoSummary[]>([])
+  /** 휴지통으로 옮긴 메모를 잠깐(3초) 알려주는 알림. 되돌리기를 누르면 되살려요. */
+  const [toast, setToast] = useState<{ text: string; ids: number[] } | null>(null)
+  /** 사용자가 직접 메모나 섹션을 골랐어요. 처음 화면을 자동으로 정하지 않아요. */
+  const moved = useRef(false)
+  /** 열린 편집기의 저장 함수 */
+  const editorSave = useRef<(() => Promise<boolean>) | null>(null)
   /** 사이드바가 들어가는 좁은 화면(태블릿, 휴대폰)에서는 섹션을 왼쪽에서 밀려 나오는 서랍으로 보여줘요. */
   const narrow = useMediaQuery('(max-width: 1099px)')
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -104,6 +112,35 @@ export default function Workspace({ user, onLogout }: { user: User; onLogout: ()
     sel.kind === 'memo' && resolve(sel.id) === resolve(from) ? { kind: 'memo', id: row.id } : sel)), [])
 
   useEffect(() => { loadSections() }, [loadSections, rev])
+  useEffect(() => { store.trash().then(setTrash, fail) }, [rev, fail])
+  useEffect(() => {
+    if (!toast) return
+    const timer = setTimeout(() => setToast(null), 3000)
+    return () => clearTimeout(timer)
+  }, [toast])
+  // 들어오면 마지막으로 고친 메모를 그 섹션에서 열어요. 메모가 하나도 없으면 바로 새 메모를 써요.
+  useEffect(() => {
+    let cancelled = false
+    store.memos({}, 'UPDATED_DESC', 0, 1).then(p => {
+      if (cancelled || moved.current) return
+      const latest = p.items[0]
+      if (latest) setFilter({ sectionId: latest.sectionId })
+      setEditorKey(k => k + 1)
+      setSelection(latest ? { kind: 'memo', id: latest.id } : { kind: 'new' })
+    }, () => undefined)
+    return () => { cancelled = true }
+  }, [user])
+  // Ctrl + K(Mac은 ⌘ + K): 어디서든 검색창으로
+  useEffect(() => {
+    const focusSearch = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        document.getElementById('search-q')?.focus()
+      }
+    }
+    window.addEventListener('keydown', focusSearch)
+    return () => window.removeEventListener('keydown', focusSearch)
+  }, [])
   useEffect(() => {
     if (!drawer) return
     const close = (e: KeyboardEvent) => { if (e.key === 'Escape') setDrawerOpen(false) }
@@ -122,7 +159,10 @@ export default function Workspace({ user, onLogout }: { user: User; onLogout: ()
 
   /** 저장하지 않은 내용이 있으면 확인 창으로 물어보고, 떠나도 되면 true */
   async function confirmLeave(): Promise<boolean> {
+    moved.current = true
     if (!dirty) return true
+    // 고치던 메모는 먼저 저장해요(자동 저장을 기다리지 않고). 저장할 수 없을 때만(글자 수 초과 등) 물어봐요.
+    if (await editorSave.current?.()) return true
     return confirm({
       title: '저장하지 않은 내용이 있어요',
       body: '이동하면 지금 고친 내용이 사라져요.',
@@ -135,18 +175,79 @@ export default function Workspace({ user, onLogout }: { user: User; onLogout: ()
   async function select(next: Selection) {
     if (!(await confirmLeave())) return
     setDirty(false)
+    if (next.kind !== 'none') setTrashOpen(false)
     const same = next.kind === selection.kind && (next.kind !== 'memo' || (selection.kind === 'memo' && resolve(selection.id) === resolve(next.id)))
     if (!same) setEditorKey(k => k + 1)
     setSelection(next)
   }
 
-  async function applyFilter(next: MemoFilter) {
+  async function applyFilter(next: MemoFilter): Promise<boolean> {
+    if (!(await confirmLeave())) return false
+    setDirty(false)
+    setSelection({ kind: 'none' })
+    setStatus('')
+    setChecked(new Set())
+    setTrashOpen(false)
+    setFilter(next)
+    return true
+  }
+
+  /** 섹션(또는 전체 메모)을 고르면 마지막으로 고친 메모를 열고, 메모가 없으면 바로 새 메모를 써요. */
+  async function openSection(sectionId?: number) {
+    setDrawerOpen(false)
+    if (!(await applyFilter({ ...filter, sectionId }))) return
+    const latest = (await store.memos({ sectionId }, 'UPDATED_DESC', 0, 1).catch(() => null))?.items[0]
+    setEditorKey(k => k + 1)
+    setSelection(latest ? { kind: 'memo', id: latest.id } : { kind: 'new' })
+  }
+
+  async function openTrash() {
+    setDrawerOpen(false)
     if (!(await confirmLeave())) return
     setDirty(false)
     setSelection({ kind: 'none' })
     setStatus('')
     setChecked(new Set())
-    setFilter(next)
+    setTrashOpen(true)
+  }
+
+  async function restore(list: MemoSummary[]) {
+    try {
+      await store.restoreMemos(list.map(m => m.id))
+      setStatus(list.length === 1 ? `'${list[0].title}' 메모를 되살렸어요.` : `메모 ${list.length}개를 되살렸어요.`)
+    } catch (err) {
+      fail(err)
+    }
+  }
+
+  /** 휴지통에서 완전히 지워요. 되돌릴 수 없어서 한 번 물어봐요. all: 휴지통 비우기 */
+  async function purge(list: MemoSummary[], all = false) {
+    if (list.length === 0) return
+    const one = list.length === 1 && !all
+    const ok = await confirm({
+      title: one ? `'${list[0].title}' 메모를 완전히 지울까요?` : `휴지통의 메모 ${list.length}개를 모두 지울까요?`,
+      body: '완전히 지운 메모는 되살릴 수 없어요.',
+      confirmLabel: one ? '완전히 지우기' : '휴지통 비우기',
+      danger: true,
+    })
+    if (!ok) return
+    try {
+      await store.purgeMemos(list.map(m => m.id))
+      setStatus(one ? `'${list[0].title}' 메모를 완전히 지웠어요.` : '휴지통을 비웠어요.')
+    } catch (err) {
+      fail(err)
+    }
+  }
+
+  async function pinMemos(list: MemoSummary[], pinned: boolean) {
+    try {
+      await store.pinMemos(list.map(m => m.id), pinned)
+      const what = list.length === 1 ? `'${list[0].title}'` : `메모 ${list.length}개`
+      setStatus(pinned ? `${what}을(를) 맨 위에 고정했어요.` : `${what}의 고정을 풀었어요.`)
+      setChecked(new Set())
+    } catch (err) {
+      fail(err)
+    }
   }
 
   /** 검색(미리보기, 결과 목록)에서 고른 메모: 그 메모의 섹션으로 옮겨 가서 목록에서도 고른 상태로 열어요. */
@@ -231,28 +332,34 @@ export default function Workspace({ user, onLogout }: { user: User; onLogout: ()
   }
 
   /** 메모 하나 또는 고른 메모 여럿을 확인한 뒤 지워요. */
+  /** 휴지통으로 옮겨요. 30일 안에 되살릴 수 있어서 묻지 않아요. */
   async function deleteMemos(list: MemoSummary[]) {
     if (list.length === 0) return
-    const one = list.length === 1
-    const ok = await confirm({
-      title: one ? `'${list[0].title}' 메모를 지울까요?` : `메모 ${list.length}개를 지울까요?`,
-      body: '지운 메모는 되살릴 수 없어요.',
-      confirmLabel: one ? '메모 지우기' : `메모 ${list.length}개 지우기`,
-      danger: true,
-    })
-    if (!ok) return
     try {
       await store.deleteMemos(list.map(m => m.id))
-      if (selection.kind === 'memo' && list.some(m => m.id === resolve(selection.id))) {
-        setDirty(false)
-        setSelection({ kind: 'none' })
-      }
-      setStatus(one ? `'${list[0].title}' 메모를 지웠어요.` : `메모 ${list.length}개를 지웠어요.`)
-      setChecked(new Set())
+      afterTrash(list)
     } catch (err) {
       fail(err)
     }
-    refreshAfterChange()
+  }
+
+  /** 휴지통으로 옮긴 뒤: 무엇을 옮겼는지 잠깐 보여주고, 열려 있던 메모였으면 목록에서 그다음 메모를 열어요. */
+  function afterTrash(list: { id: number; title: string }[]) {
+    const gone = new Set(list.map(m => resolve(m.id)))
+    if (selection.kind === 'memo' && gone.has(resolve(selection.id))) {
+      const i = memos.findIndex(m => m.id === resolve(selection.id))
+      const rest = memos.filter(m => !gone.has(m.id))
+      // 바로 아래 메모, 맨 아래였으면 바로 위 메모
+      const next = i < 0 ? undefined : rest[Math.min(i, rest.length - 1)]
+      setDirty(false)
+      setEditorKey(k => k + 1)
+      setSelection(next ? { kind: 'memo', id: next.id } : { kind: 'none' })
+    }
+    setChecked(new Set())
+    setToast({
+      text: list.length === 1 ? `'${list[0].title}' 메모를 휴지통으로 옮겼어요.` : `메모 ${list.length}개를 휴지통으로 옮겼어요.`,
+      ids: list.map(m => m.id),
+    })
   }
 
   /** 사용자 지정 순서에서 index번째 메모를 to번째 자리로 옮겨요. 화면을 먼저 바꾸고, 실패하면 다시 불러와요. */
@@ -310,7 +417,10 @@ export default function Workspace({ user, onLogout }: { user: User; onLogout: ()
         draggingMemos={draggingMemos}
         onMemosDrop={moveMemosToSection}
         activeId={activeSectionId}
-        onSelect={id => { setDrawerOpen(false); applyFilter({ ...filter, sectionId: id }) }}
+        onSelect={openSection}
+        trashCount={trash.length}
+        trashOpen={trashOpen}
+        onOpenTrash={openTrash}
         onChanged={refreshAfterChange}
         onDeleted={id => {
           // 지운 섹션과 하위 섹션, 그 안의 메모는 서버에서 모두 사라졌어요.
@@ -349,21 +459,49 @@ export default function Workspace({ user, onLogout }: { user: User; onLogout: ()
             섹션
           </button>
           <h1 id="list-title" className="list__title">
-            {listTitle}{' '}
-            {loaded && (
+            {trashOpen ? '휴지통' : listTitle}{' '}
+            {trashOpen ? <span className="muted">{trash.length.toLocaleString('ko-KR')}개</span> : loaded && (
               <span className="muted">
                 {page.capped ? `${page.total.toLocaleString('ko-KR')}개 이상` : `${page.total.toLocaleString('ko-KR')}개`}
               </span>
             )}
           </h1>
-          <button type="button" className="btn btn--primary btn--sm" onClick={() => select({ kind: 'new' })}>
-            새 메모 쓰기
-          </button>
+          {/* 휴지통에서는 쓰지 않아요. */}
+          {!trashOpen && (
+            <button type="button" className="btn btn--primary btn--sm" onClick={() => select({ kind: 'new' })}>
+              새 메모 쓰기
+            </button>
+          )}
           <button type="button" className="collapse-btn" aria-expanded="true" aria-controls="list-body"
                   onClick={() => changeLayout({ listOpen: false })}>
             <span aria-hidden="true">«</span><span className="sr-only">메모 목록 접기</span>
           </button>
         </div>
+        {trashOpen ? <>
+          <p className="list__trash-note">지운 메모는 30일 동안 여기 있다가 완전히 지워져요.</p>
+          <p className="status" role="status">{status}</p>
+          {trash.length === 0 ? (
+            <p className="list__empty">휴지통이 비어 있어요.</p>
+          ) : <>
+            <ul className="trash-list" aria-label="휴지통의 메모">
+              {trash.map(m => (
+                <li key={m.id} className="trash-item">
+                  <div>
+                    <p className="trash-item__title">{m.title}</p>
+                    <p className="trash-item__meta">
+                      {dateFmt.format(new Date(m.deletedAt!))}에 지움{m.preview && ` · ${m.preview}`}
+                    </p>
+                  </div>
+                  <div className="trash-item__actions">
+                    <button type="button" className="textbtn" onClick={() => restore([m])}>되살리기</button>
+                    <button type="button" className="textbtn textbtn--danger" onClick={() => purge([m])}>완전히 지우기</button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <button type="button" className="btn btn--secondary list__more" onClick={() => purge(trash, true)}>휴지통 비우기</button>
+          </>}
+        </> : <>
         <div className="list__tools">
           <SortPicker idPrefix="memo-sort" fields={MEMO_SORT_FIELDS} custom="CUSTOM"
                       field={splitMemoSort(sort).field} dir={splitMemoSort(sort).dir}
@@ -371,7 +509,7 @@ export default function Workspace({ user, onLogout }: { user: User; onLogout: ()
           <span className="list__hint">
             {touchOnly
               ? '메모를 길게 누르면 여러 개를 고를 수 있어요.'
-              : `${sort === 'CUSTOM' ? '끌거나 Alt + ↑↓ 로 순서를 바꾸고, 섹션에 놓으면 옮겨져요.' : '메모를 끌어 섹션에 놓으면 옮겨져요.'} Ctrl + 클릭으로 여러 개를 고르고, 우클릭으로 지워요.`}
+              : `${sort === 'CUSTOM' ? '끌거나 Alt + ↑↓ 로 순서를 바꾸고, 섹션에 놓으면 옮겨져요.' : '메모를 끌어 섹션에 놓으면 옮겨져요.'} Ctrl + 클릭으로 여러 개를 고르고, 우클릭으로 고정하거나 휴지통으로 옮겨요.`}
           </span>
         </div>
         {searching && (
@@ -403,6 +541,7 @@ export default function Workspace({ user, onLogout }: { user: User; onLogout: ()
               else select({ kind: 'memo', id })
             }}
             onDelete={deleteMemos}
+            onPin={pinMemos}
             onClearChecked={() => setChecked(new Set())}
             onReorder={reorder}
             onDragMemos={setDraggingMemos}
@@ -416,6 +555,12 @@ export default function Workspace({ user, onLogout }: { user: User; onLogout: ()
             메모 더 보기
           </button>
         )}
+        {loaded && (
+          <button type="button" className="list__new" onClick={() => select({ kind: 'new' })}>
+            <span aria-hidden="true">+</span><span className="sr-only">새 메모 쓰기</span>
+          </button>
+        )}
+        </>}
         </div>
       </section>
       {touchOnly && checked.size > 0 && (
@@ -431,9 +576,16 @@ export default function Workspace({ user, onLogout }: { user: User; onLogout: ()
             <option value="" disabled>옮기기</option>
             <SectionOptions tree={tree} />
           </select>
+          <button type="button" className="btn btn--secondary btn--sm"
+                  onClick={() => {
+                    const list = memos.filter(m => checked.has(m.id))
+                    pinMemos(list, !list.every(m => m.pinned))
+                  }}>
+            {memos.filter(m => checked.has(m.id)).every(m => m.pinned) ? '고정 풀기' : '고정'}
+          </button>
           <button type="button" className="btn btn--secondary btn--sm select-actions__delete"
                   onClick={() => deleteMemos(memos.filter(m => checked.has(m.id)))}>
-            지우기
+            휴지통으로
           </button>
           <button type="button" className="textbtn" onClick={() => setChecked(new Set())}>취소</button>
         </div>
@@ -456,13 +608,25 @@ export default function Workspace({ user, onLogout }: { user: User; onLogout: ()
             initialSectionId={filter.sectionId ?? defaultSection?.id}
             onDirtyChange={setDirty}
             onSaved={memo => { setDirty(false); setSelection({ kind: 'memo', id: memo.id }); refreshAfterChange() }}
-            onDeleted={() => { setDirty(false); setSelection({ kind: 'none' }); refreshAfterChange() }}
+            saveRef={editorSave}
+            onDeleted={memo => afterTrash([memo])}
             onClose={() => select({ kind: 'none' })}
             onError={fail}
           />
           </Suspense>
         )}
       </section>
+      <div className="toast-region" role="status" aria-live="polite">
+        {toast && (
+          <div className="toast">
+            <span>{toast.text}</span>
+            <button type="button" className="textbtn toast__undo"
+                    onClick={() => { const ids = toast.ids; setToast(null); store.restoreMemos(ids).catch(fail) }}>
+              되돌리기
+            </button>
+          </div>
+        )}
+      </div>
       {accountOpen && (
         <AccountDialog user={user} onClose={() => setAccountOpen(false)} onDeleted={onLogout} />
       )}

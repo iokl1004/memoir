@@ -5,7 +5,6 @@ import Image from '@tiptap/extension-image'
 import { Placeholder } from '@tiptap/extensions'
 import { ApiError, type Memo } from './api'
 import { editorSrc, toEditorHtml, toStoredHtml } from './images'
-import { useConfirm } from './confirm'
 import { onStore, resolve, store } from './store'
 
 const timeFmt = new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium', timeStyle: 'short' })
@@ -38,16 +37,22 @@ function imageFiles(list: FileList | null | undefined): File[] {
   return [...(list ?? [])].filter(f => f.type.startsWith('image/'))
 }
 
-export default function MemoEditor({ memoId, initialSectionId, onDirtyChange, onSaved, onDeleted, onClose, onError }: {
+/** 타이핑을 멈추고 이만큼 지나면 저장해요. */
+const AUTOSAVE_MS = 1000
+/** 자동 저장을 끄면 '0'. 기기마다 따로 기억해요. */
+const AUTOSAVE_KEY = 'memoir-autosave'
+
+export default function MemoEditor({ memoId, initialSectionId, saveRef, onDirtyChange, onSaved, onDeleted, onClose, onError }: {
   memoId: number | null
+  /** 목록으로 나가거나 다른 메모를 열 때, 묻지 않고 먼저 저장하려고 바깥에 저장 함수를 건네요. 저장하면 true */
+  saveRef: { current: (() => Promise<boolean>) | null }
   initialSectionId?: number
   onDirtyChange: (dirty: boolean) => void
   onSaved: (memo: Memo) => void
-  onDeleted: () => void
+  onDeleted: (memo: Memo) => void
   onClose: () => void
   onError: (err: unknown) => void
 }) {
-  const confirm = useConfirm()
   const [memo, setMemoState] = useState<Memo | null>(null)
   // 바로 읽을 수 있게 ref에도 둬요. 고른 메모 번호가 바뀌어도(새 메모 저장, 충돌 사본) 같은 메모면 다시 불러오지 않아요.
   const memoRef = useRef<Memo | null>(null)
@@ -57,6 +62,7 @@ export default function MemoEditor({ memoId, initialSectionId, onDirtyChange, on
   const [textLength, setTextLength] = useState(0)
   const [status, setStatus] = useState('')
   const [busy, setBusy] = useState(false)
+  const busyRef = useRef(false)
   const [uploading, setUploading] = useState(0)
   const editorRef = useRef<Editor | null>(null)
 
@@ -136,7 +142,8 @@ export default function MemoEditor({ memoId, initialSectionId, onDirtyChange, on
       if (editor.isDestroyed) return
       editor.commands.setContent(html, { emitUpdate: false })
       // 편집기가 HTML을 자기 모양으로 정리하니, 정리된 값을 기준으로 삼아야 "저장 안 됨"이 잘못 뜨지 않아요.
-      const d = { title: m.title, html: editor.getHTML() }
+      // 제목 없이 저장한 메모는 서버가 '제목 없음'으로 적어요. 입력칸에는 비운 채로 보여줘요(자리 표시 글자가 같아요).
+      const d = { title: m.title === '제목 없음' ? '' : m.title, html: editor.getHTML() }
       setMemo(m)
       setSaved(d)
       setDraft(d)
@@ -169,44 +176,76 @@ export default function MemoEditor({ memoId, initialSectionId, onDirtyChange, on
     return () => window.removeEventListener('beforeunload', warn)
   }, [dirty])
 
-  async function save() {
-    const sectionId = memo?.sectionId ?? initialSectionId
-    if (sectionId === undefined || busy || !editor) return
-    if (uploading > 0) { setStatus('그림을 다 올린 뒤에 저장해 주세요.'); return }
+  /** auto: 자동 저장이면 "저장했어요" 같은 문구 없이 조용히 저장해요(오류만 보여요). 저장하면 true */
+  async function save(auto = false): Promise<boolean> {
+    const sectionId = memoRef.current?.sectionId ?? initialSectionId
+    if (sectionId === undefined || busyRef.current || !editor) return false
+    if (uploading > 0) { if (!auto) setStatus('그림을 다 올린 뒤에 저장해 주세요.'); return false }
+    busyRef.current = true
     setBusy(true)
-    setStatus('저장하는 중')
     try {
       const html = editor.getHTML()
-      const body = { title: draft.title, contentHtml: toStoredHtml(html), content: editor.getText({ blockSeparator: '\n' }), sectionId }
-      const result = memo ? await store.updateMemo(memo.id, body, memo) : await store.createMemo(body)
-      // 지금 편집기 값을 기준으로 둬요. 서버가 정리한 HTML과 모양이 조금 달라도 "저장 안 됨"이 뜨지 않게요.
-      const d = { title: result.title, html }
+      const title = draft.title
+      const body = { title, contentHtml: toStoredHtml(html), content: editor.getText({ blockSeparator: '\n' }), sectionId }
+      const current = memoRef.current
+      const result = current ? await store.updateMemo(current.id, body, current) : await store.createMemo(body)
+      // 보낸 값을 기준으로 둬요. 저장하는 사이 더 쓴 내용은 "저장 안 됨"으로 남아 다음 자동 저장이 저장해요.
+      // (제목을 비워 두면 서버는 '제목 없음'으로 저장하지만, 입력칸은 비운 그대로 둬요)
       setMemo(result)
-      setSaved(d)
-      setDraft(d)
-      setStatus(navigator.onLine ? '저장했어요.' : '이 기기에 저장했어요. 인터넷에 연결되면 서버에 보낼게요.')
+      setSaved({ title, html })
+      if (!auto) setStatus(navigator.onLine ? '저장했어요.' : '이 기기에 저장했어요. 인터넷에 연결되면 서버에 보낼게요.')
+      else setStatus(s => (s.startsWith('저장하지 못했어요') ? '' : s))
       onSaved(result)
+      return true
     } catch (err) {
       // 실패해도 쓴 내용은 그대로 남겨요.
       setStatus(err instanceof ApiError ? `저장하지 못했어요. ${err.message}` : '저장하지 못했어요.')
       if (err instanceof ApiError && err.status === 401) onError(err)
+      return false
     } finally {
+      busyRef.current = false
       setBusy(false)
     }
   }
+  const saveLatest = useRef(save)
+  useEffect(() => { saveLatest.current = save })
+  const [autosave, setAutosave] = useState(() => localStorage.getItem(AUTOSAVE_KEY) !== '0')
+  // 자동 저장을 끄면 예전처럼, 떠날 때 저장하지 않고 "저장하지 않은 내용이 있어요"로 물어봐요.
+  useEffect(() => {
+    saveRef.current = autosave ? () => saveLatest.current(true) : null
+    return () => { saveRef.current = null }
+  }, [saveRef, autosave])
 
+  // 자동 저장: 멈추고 1초 뒤에. 아무것도 안 쓴 새 메모는 만들지 않아요.
+  const blank = !memo && !draft.title.trim() && (editor?.isEmpty ?? true)
+  useEffect(() => {
+    if (!autosave || !dirty || blank || uploading > 0) return
+    const timer = setTimeout(() => saveLatest.current(true), AUTOSAVE_MS)
+    return () => clearTimeout(timer)
+  }, [autosave, draft, dirty, blank, uploading, busy])
+  // 탭을 숨기면(다른 앱으로, 휴대폰 홈 화면, 창 닫기 직전) 기다리지 않고 저장해요.
+  useEffect(() => {
+    const hide = () => { if (autosave && document.visibilityState === 'hidden' && dirty && !blank) void saveLatest.current(true) }
+    document.addEventListener('visibilitychange', hide)
+    return () => document.removeEventListener('visibilitychange', hide)
+  }, [autosave, dirty, blank])
+
+  async function togglePin() {
+    if (!memo) return
+    try {
+      await store.pinMemos([memo.id], !memo.pinned)
+      setMemo({ ...memo, pinned: !memo.pinned })
+    } catch (err) {
+      onError(err)
+    }
+  }
+
+  /** 휴지통으로 옮겨요. 되살릴 수 있어서 묻지 않아요. */
   async function remove() {
     if (!memo) return
-    const ok = await confirm({
-      title: `'${memo.title}' 메모를 지울까요?`,
-      body: '지운 메모는 되살릴 수 없어요.',
-      confirmLabel: '메모 지우기',
-      danger: true,
-    })
-    if (!ok) return
     try {
       await store.deleteMemo(memo.id)
-      onDeleted()
+      onDeleted(memo)
     } catch (err) {
       onError(err)
     }
@@ -225,11 +264,22 @@ export default function MemoEditor({ memoId, initialSectionId, onDirtyChange, on
       {loading && <p className="pane__loading" role="status">메모를 불러오는 중</p>}
       <div className="editor__bar" hidden={loading}>
         <button type="button" className="textbtn editor__back" onClick={onClose}>← 목록으로</button>
-        <span className="editor__state" aria-live="polite">{dirty ? '저장 안 됨' : memo ? '저장됨' : ''}</span>
+        <span className="editor__state" aria-live="polite">{busy ? '저장하는 중' : dirty ? '저장 안 됨' : memo ? '저장됨' : ''}</span>
+        {memo && (
+          <button type="button" className="textbtn" aria-pressed={memo.pinned} onClick={togglePin}>
+            {memo.pinned ? '고정 풀기' : '맨 위에 고정'}
+          </button>
+        )}
+        <label className="check editor__autosave">
+          <input type="checkbox" checked={autosave}
+                 onChange={e => { localStorage.setItem(AUTOSAVE_KEY, e.target.checked ? '1' : '0'); setAutosave(e.target.checked) }} />
+          자동 저장
+        </label>
       </div>
 
       <label className="sr-only" htmlFor="memo-title">제목</label>
-      <input id="memo-title" className="editor__title" value={draft.title} maxLength={100} hidden={loading}
+      {/* 새 메모는 제목부터 바로 쓸 수 있게 커서를 둬요. */}
+      <input id="memo-title" className="editor__title" value={draft.title} maxLength={100} hidden={loading} autoFocus={memoId === null}
              placeholder="제목 없음" onChange={e => setDraft({ ...draft, title: e.target.value })} />
 
       {/* 편집기는 불러오는 동안에도 있어야 본문을 넣을 수 있어서, 감추기만 해요. */}
@@ -246,7 +296,7 @@ export default function MemoEditor({ memoId, initialSectionId, onDirtyChange, on
           </span>
         </p>
         <div className="btn-row">
-          {memo && <button type="button" className="textbtn textbtn--danger" onClick={remove}>메모 지우기</button>}
+          {memo && <button type="button" className="textbtn textbtn--danger" onClick={remove}>휴지통으로</button>}
           <button type="submit" className="btn btn--primary" disabled={busy || uploading > 0 || (!dirty && !!memo)}>메모 저장하기</button>
         </div>
       </div>

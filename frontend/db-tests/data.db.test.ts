@@ -33,14 +33,57 @@ describe('섹션', () => {
     expect(top).toEqual(['미분류', '일지', '회사'])
   })
 
-  it('섹션을 지우면 하위 섹션과 메모도 지워진다', async () => {
+  it('섹션을 지우면 하위 섹션도 지우고, 안의 메모는 미분류로 옮겨 휴지통에 넣는다', async () => {
     const { db } = await newUser()
     const a = await ok<Section>(db.rpc('create_section', { p_name: 'A', p_parent_id: null }))
     const b = await ok<Section>(db.rpc('create_section', { p_name: 'B', p_parent_id: a.id }))
     await ok(db.rpc('save_memo', { p_id: null, p_section_id: b.id, p_title: '안', p_html: '<p>x</p>', p_text: 'x' }))
     await ok(db.rpc('delete_section', { p_id: a.id }))
-    expect(await ok<Section[]>(db.rpc('list_sections'))).toHaveLength(1)
-    expect(await ok<unknown[]>(db.from('memos').select('id'))).toHaveLength(0)
+    const list = await ok<Section[]>(db.rpc('list_sections'))
+    expect(list).toHaveLength(1)
+    expect(list[0].memo_count).toBe(0)
+    const memos = await ok<{ section_id: number; deleted_at: string | null }[]>(db.from('memos').select('section_id, deleted_at'))
+    expect(memos).toHaveLength(1)
+    expect(memos[0].section_id).toBe(list[0].id)
+    expect(memos[0].deleted_at).not.toBeNull()
+  })
+})
+
+describe('휴지통과 고정', () => {
+  it('지우면 휴지통으로, 되살리기·완전히 지우기, 고치면 휴지통에서 나온다', async () => {
+    const { db } = await newUser()
+    const save = (id: number | null, title: string) =>
+      ok<Memo>(db.rpc('save_memo', { p_id: id, p_section_id: null, p_title: title, p_html: null, p_text: title }))
+    const a = await save(null, '가')
+    const b = await save(null, '나')
+    const count = async () => (await ok<Page>(db.rpc('search_memos', {}))).total
+    await ok(db.rpc('delete_memos', { p_ids: [a.id, b.id] }))
+    expect(await count()).toBe(0)
+    await ok(db.rpc('restore_memos', { p_ids: [a.id] }))
+    expect(await count()).toBe(1)
+    // 휴지통에 없는 a는 완전히 지워지지 않아요.
+    await ok(db.rpc('purge_memos', { p_ids: [a.id, b.id] }))
+    expect((await ok<{ id: number }[]>(db.from('memos').select('id'))).map(r => r.id)).toEqual([a.id])
+    await ok(db.rpc('delete_memos', { p_ids: [a.id] }))
+    await save(a.id, '가 고침')
+    expect(await count()).toBe(1)
+  })
+
+  it('고정은 수정일을 바꾸지 않고, 남의 메모는 되살리거나 고정하거나 지울 수 없다', async () => {
+    const me = await newUser()
+    const other = await newUser()
+    const memo = await ok<Memo & { updated_at: string; pinned: boolean }>(me.db.rpc('save_memo', { p_id: null, p_section_id: null, p_title: '내 것', p_html: null, p_text: '' }))
+    await ok(me.db.rpc('pin_memos', { p_ids: [memo.id], p_pinned: true }))
+    const after = (await ok<{ pinned: boolean; updated_at: string }[]>(me.db.from('memos').select('pinned, updated_at')))[0]
+    expect(after).toEqual({ pinned: true, updated_at: memo.updated_at })
+
+    await ok(me.db.rpc('delete_memos', { p_ids: [memo.id] }))
+    await ok(other.db.rpc('restore_memos', { p_ids: [memo.id] }))
+    await ok(other.db.rpc('pin_memos', { p_ids: [memo.id], p_pinned: false }))
+    await ok(other.db.rpc('purge_memos', { p_ids: [memo.id] }))
+    const still = (await ok<{ pinned: boolean; deleted_at: string | null }[]>(me.db.from('memos').select('pinned, deleted_at')))[0]
+    expect(still.pinned).toBe(true)
+    expect(still.deleted_at).not.toBeNull()
   })
 })
 

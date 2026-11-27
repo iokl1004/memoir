@@ -18,7 +18,7 @@ type Editing =
 type Place = 'before' | 'after' | 'into'
 type DropTarget = { id: number; place: Place } | 'root' | null
 
-export default function SectionNav({ tree, sort, onSortChange, draggingMemos, onMemosDrop, activeId, onSelect, onChanged, onDeleted, onError, paneCollapsed, onPaneCollapsedChange, drawer }: {
+export default function SectionNav({ tree, sort, onSortChange, draggingMemos, onMemosDrop, activeId, onSelect, onChanged, onDeleted, onError, paneCollapsed, onPaneCollapsedChange, drawer, trashCount, trashOpen, onOpenTrash }: {
   tree: SectionNode[]
   sort: SectionSort
   onSortChange: (sort: SectionSort) => void
@@ -34,6 +34,9 @@ export default function SectionNav({ tree, sort, onSortChange, draggingMemos, on
   onPaneCollapsedChange: (collapsed: boolean) => void
   /** 좁은 화면에서 서랍으로 열려 있는지 */
   drawer: boolean
+  trashCount: number
+  trashOpen: boolean
+  onOpenTrash: () => void
 }) {
   const confirm = useConfirm()
   const [editing, setEditing] = useState<Editing>(null)
@@ -189,7 +192,7 @@ export default function SectionNav({ tree, sort, onSortChange, draggingMemos, on
   async function remove(section: SectionNode) {
     const parts = []
     if (section.descendantCount > 0) parts.push(`하위 섹션 ${section.descendantCount}개도 함께 지워져요.`)
-    if (section.totalCount > 0) parts.push(`안의 메모 ${section.totalCount}개도 함께 지워지고, 되살릴 수 없어요.`)
+    if (section.totalCount > 0) parts.push(`안의 메모 ${section.totalCount}개는 휴지통으로 옮겨져서 30일 안에 되살릴 수 있어요.`)
     const ok = await confirm({
       title: `'${section.name}' 섹션을 지울까요?`,
       body: parts.join(' ') || '비어 있는 섹션이에요.',
@@ -231,7 +234,7 @@ export default function SectionNav({ tree, sort, onSortChange, draggingMemos, on
       </div>
       <ul className="sections__list">
         <li>
-          <button type="button" className="section-item" aria-current={activeId === undefined ? 'true' : undefined}
+          <button type="button" className="section-item" aria-current={activeId === undefined && !trashOpen ? 'true' : undefined}
                   onClick={() => onSelect(undefined)}>
             <span>전체 메모</span><span className="section-item__count">{total}</span>
           </button>
@@ -277,7 +280,7 @@ export default function SectionNav({ tree, sort, onSortChange, draggingMemos, on
                     <span aria-hidden="true">{collapsed.has(s.id) ? '▸' : '▾'}</span>
                   </button>
                 ) : <span className="section-row__spacer" aria-hidden="true" />}
-                <button type="button" className="section-item" aria-current={activeId === s.id ? 'true' : undefined}
+                <button type="button" className="section-item" aria-current={activeId === s.id && !trashOpen ? 'true' : undefined}
                         aria-keyshortcuts={s.isDefault ? undefined : sort.key === 'CUSTOM' ? 'Delete Alt+ArrowUp Alt+ArrowDown' : 'Delete'}
                         onClick={() => {
                           if (press.current?.fired) { press.current = null; return }
@@ -325,6 +328,12 @@ export default function SectionNav({ tree, sort, onSortChange, draggingMemos, on
         </button>
       )}
       {error && <p className="field__error sections__error" role="alert">{error}</p>}
+
+      <button type="button" className="section-item sections__trash" aria-current={trashOpen ? 'true' : undefined}
+              onClick={onOpenTrash}>
+        <span>휴지통</span>
+        {trashCount > 0 && <span className="section-item__count">{trashCount}</span>}
+      </button>
 
       {menu && (
         <ContextMenu x={menu.x} y={menu.y} label={`'${menu.section.name}' 섹션 메뉴`} onClose={() => setMenu(null)}

@@ -193,6 +193,7 @@ html[data-buttons="arrow"] .auth__sent .btn--secondary::after { content: none; }
 .section-item[aria-current="true"] { background: color-mix(in oklab, var(--ink) 10%, transparent); font-weight: 500; }
 .section-item__count { font: 400 var(--t-label)/1 var(--font-mono); color: var(--muted); }
 .sections__add { margin-top: var(--s-2); padding-left: var(--s-3); }
+.sections__trash { width: 100%; margin-top: var(--s-4); }
 .sections__error { padding: 0 var(--s-3); }
 
 /* tree: each level indents 14px; the toggle sits left of the name */
@@ -256,6 +257,23 @@ html[data-buttons="arrow"] .list__sections-btn::after { content: none; }
 }
 .memo-item__meta { font-size: var(--t-label); color: var(--muted); }
 .list__more { margin: var(--s-4) var(--s-5) 0; }
+.memo-item__pin {
+  display: inline-block; margin-right: var(--s-2); padding: 1px 6px; border-radius: var(--r-sm);
+  background: color-mix(in oklab, var(--accent) 24%, transparent); font: 500 var(--t-label)/1.4 var(--font-text); vertical-align: 1px;
+}
+/* 목록 맨 아래의 "+": 새 메모 쓰기와 같아요. */
+.list__new {
+  display: flex; align-items: center; justify-content: center; width: calc(100% - 2 * var(--s-5)); min-height: 44px;
+  margin: var(--s-3) var(--s-5) 0; border: 1px dashed var(--line-strong); border-radius: var(--r-sm);
+  background: none; color: var(--muted); font-size: 20px; line-height: 1; cursor: pointer;
+}
+html:not([data-motion="off"]) .list__new:hover { color: var(--ink); border-color: var(--ink); background: color-mix(in oklab, var(--ink) 4%, transparent); }
+.list__new:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.trash-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--s-3); padding: var(--s-3) var(--s-5); border-bottom: 1px solid var(--line); }
+.trash-item__title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trash-item__meta { font-size: var(--t-label); color: var(--muted); }
+.trash-item__actions { display: flex; gap: var(--s-3); }
+.list__trash-note { padding: 0 var(--s-5) var(--s-3); font-size: var(--t-small); color: var(--muted); }
 
 .list__tools { display: flex; align-items: center; gap: var(--s-3); flex-wrap: wrap; padding: var(--s-3) var(--s-5) 0; }
 /* sort: a criterion and a direction, side by side (the direction hides for the custom order) */
@@ -288,7 +306,8 @@ html[data-buttons="arrow"] .list__sections-btn::after { content: none; }
 .pane__empty, .pane__loading { height: 100%; display: grid; place-items: center; padding: var(--s-6); color: var(--muted); text-align: center; }
 
 .editor { height: 100%; display: flex; flex-direction: column; gap: var(--s-3); padding: var(--s-4) var(--s-7) var(--s-4); }
-.editor__bar { display: flex; align-items: center; gap: var(--s-3); }
+.editor__bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--s-3); }
+.editor__autosave { color: var(--muted); }
 .editor__back { display: none; }
 .editor__state { margin-left: auto; font-size: var(--t-label); color: var(--muted); }
 .editor input.editor__title {
@@ -379,7 +398,7 @@ html[data-motion="off"] .app, html[data-motion="off"] :is(.sections, .list) > * 
 @keyframes drawer-in { from { translate: -100% 0; } }
 .name-input__label { font-size: var(--t-label); color: var(--muted); }
 .select-actions {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 35; display: flex; align-items: center; gap: var(--s-2) var(--s-3);
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 35; display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3);
   padding: var(--s-3) var(--s-4) calc(var(--s-3) + env(safe-area-inset-bottom)); border-top: 1px solid var(--line-strong);
   background: var(--surface); box-shadow: 0 -8px 24px color-mix(in oklab, #000 18%, transparent);
   animation: sheet-in 200ms var(--ease, ease-out);
@@ -434,6 +453,8 @@ html[data-motion="off"] :is(.drawer-backdrop, .select-actions, .sections[data-dr
   .list__head, .list__tools, .list__filter, .list .pane-body > .status { padding-inline: var(--s-4); }
   .memo-item { padding: var(--s-4); }
   .list__more { width: calc(100% - 2 * var(--s-4)); margin-inline: var(--s-4); }
+  .list__new { width: calc(100% - 2 * var(--s-4)); margin-inline: var(--s-4); }
+  .trash-item { padding-inline: var(--s-4); }
   .editor { padding: var(--s-3) var(--s-4); }
   .editor__back { display: inline-flex; }
   .editor select { height: 44px; }
@@ -475,3 +496,16 @@ html[data-motion="off"] :is(.drawer-backdrop, .select-actions, .sections[data-dr
 .usage__meter::-webkit-meter-suboptimum-value { border-radius: 999px; background: var(--error); }
 .usage__meter::-moz-meter-bar { border-radius: 999px; background: var(--accent); }
 .usage__meter:-moz-meter-sub-optimum::-moz-meter-bar { background: var(--error); }
+
+/* 휴지통으로 옮긴 메모 알림(3초). 휴대폰은 아래쪽 막대 위에 떠요. */
+.toast-region { position: fixed; left: 50%; bottom: calc(var(--s-5) + env(safe-area-inset-bottom)); z-index: 40; translate: -50% 0; width: max-content; max-width: calc(100% - 2 * var(--s-4)); }
+.toast {
+  display: flex; align-items: center; gap: var(--s-4); padding: var(--s-2) var(--s-2) var(--s-2) var(--s-4);
+  border-radius: var(--r-sm); background: var(--ink); color: var(--bg); font-size: var(--t-small);
+  box-shadow: 0 8px 24px color-mix(in oklab, #000 24%, transparent); animation: toast-in 180ms var(--ease, ease-out);
+}
+.toast > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.toast__undo { flex: none; min-height: 44px; padding: 0 var(--s-3); color: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+@keyframes toast-in { from { opacity: 0; translate: 0 8px; } }
+@media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
+html[data-motion="off"] .toast { animation: none; }

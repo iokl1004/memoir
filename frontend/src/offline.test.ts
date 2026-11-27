@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  ApiError, applyOp, cloneData, flushOp, listSections, replay, searchMemos, titleSortKey,
+  ApiError, applyOp, cloneData, flushOp, listSections, replay, searchMemos, titleSortKey, trashMemos,
   type Data, type FlushContext, type MemoRow, type Op, type Remote, type SectionRow,
 } from './offline'
 
@@ -9,7 +9,7 @@ const T1 = '2026-11-21T01:00:00.000000+00:00'
 const sec = (id: number, name: string, extra: Partial<SectionRow> = {}): SectionRow =>
   ({ id, parentId: null, name, isDefault: false, position: id * 1024, createdAt: T0, ...extra })
 const memo = (id: number, title: string, extra: Partial<MemoRow> = {}): MemoRow => ({
-  id, sectionId: 1, title, content: title, contentHtml: `<p>${title}</p>`, createdAt: T0, updatedAt: T0, position: id * 1024, ...extra,
+  id, sectionId: 1, title, content: title, contentHtml: `<p>${title}</p>`, createdAt: T0, updatedAt: T0, position: id * 1024, pinned: false, deletedAt: null, ...extra,
 })
 const data = (sections: SectionRow[], memos: MemoRow[]): Data =>
   ({ sections: new Map(sections.map(s => [s.id, s])), memos: new Map(memos.map(m => [m.id, m])) })
@@ -43,6 +43,9 @@ function fakeServer(d: Data) {
     moveMemos: async () => undefined,
     deleteMemos: async ids => { calls.push(`delete ${ids.join(',')}`); ids.forEach(x => d.memos.delete(x)) },
     moveMemo: async () => undefined,
+    restoreMemos: async ids => { calls.push(`restore ${ids.join(',')}`) },
+    purgeMemos: async ids => { calls.push(`purge ${ids.join(',')}`) },
+    pinMemos: async (ids, pinned) => { calls.push(`pin ${ids.join(',')} ${pinned}`) },
     uploadImage: async () => 777,
   }
   return { remote, calls, d }
@@ -74,13 +77,34 @@ describe('이 기기에서 바로 반영', () => {
     expect(() => applyOp(d, { type: 'moveSection', id: 2, parentId: -1, beforeId: null }, id)).toThrow('하위 섹션 안으로는')
   })
 
-  it('섹션을 지우면 하위 섹션과 메모도 함께 지워요', () => {
+  it('섹션을 지우면 하위 섹션도 지우고, 안의 메모는 미분류로 옮겨 휴지통에 넣어요', () => {
     const d = cloneData(base())
     applyOp(d, { type: 'createSection', id: -1, name: '하위', parentId: 2, at: T1 }, id)
     applyOp(d, { type: 'saveMemo', id: -2, body: body('새 메모', -1), base: null, at: T1 }, id)
-    applyOp(d, { type: 'deleteSection', id: 2 }, id)
+    applyOp(d, { type: 'deleteSection', id: 2, at: T1 }, id)
     expect([...d.sections.keys()]).toEqual([1])
+    expect(searchMemos(d, {}, 'CREATED_DESC', 0, 20).items.map(m => m.id)).toEqual([10])
+    expect(trashMemos(d).map(m => [m.title, m.sectionId])).toEqual([['장보기', 1], ['새 메모', 1]])
+    expect(listSections(d)[0].memoCount).toBe(1)
+  })
+
+  it('휴지통: 넣기, 되살리기, 완전히 지우기. 고치면 휴지통에서 나와요', () => {
+    const d = cloneData(base())
+    applyOp(d, { type: 'deleteMemos', ids: [10, 11], bases: {}, at: T1 }, id)
+    expect(searchMemos(d, {}, 'CREATED_DESC', 0, 20).total).toBe(0)
+    applyOp(d, { type: 'restoreMemos', ids: [10] }, id)
+    applyOp(d, { type: 'purgeMemos', ids: [10, 11] }, id) // 10은 휴지통에 없어서 그대로
     expect([...d.memos.keys()]).toEqual([10])
+    applyOp(d, { type: 'deleteMemos', ids: [10], bases: {}, at: T1 }, id)
+    applyOp(d, { type: 'saveMemo', id: 10, body: body('회의록'), base: null, at: T1 }, id)
+    expect(trashMemos(d)).toEqual([])
+  })
+
+  it('고정한 메모는 어떤 정렬에서도 맨 위예요', () => {
+    const d = cloneData(base())
+    applyOp(d, { type: 'pinMemos', ids: [11], pinned: true }, id)
+    expect(searchMemos(d, {}, 'TITLE_DESC', 0, 20).items.map(m => m.id)).toEqual([11, 10])
+    expect(searchMemos(d, {}, 'CUSTOM', 0, 20).items.map(m => m.id)).toEqual([11, 10])
   })
 
   it('다른 기기에서 섹션이 지워졌어도 쓴 메모는 미분류에 보여요', () => {

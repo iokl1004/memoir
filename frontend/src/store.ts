@@ -4,10 +4,10 @@
 // - 자동 로그인을 켰으면 IndexedDB에 남겨서 새로 열어도, 인터넷이 없어도 그대로예요. 끄면 이 탭의 메모리에만 둬요.
 // - 탭 여러 개: IndexedDB를 함께 쓰고, 보내기는 Web Locks로 한 탭씩, 바뀌면 BroadcastChannel로 서로 알려요.
 import { useSyncExternalStore } from 'react'
-import { remote, type Memo, type MemoFilter, type MemoPage, type MemoSort, type Section, type User } from './api'
+import { remote, type Memo, type MemoFilter, type MemoPage, type MemoSort, type MemoSummary, type Section, type User } from './api'
 import { shrinkImage } from './images'
 import {
-  ApiError, applyEffects, applyOp, cloneData, flushOp, listSections, replay, searchMemos, tempId, toMemo,
+  ApiError, applyEffects, applyOp, cloneData, flushOp, listSections, replay, searchMemos, tempId, toMemo, trashMemos,
   type Data, type Effect, type FlushContext, type MemoBody, type MemoRow, type Op,
 } from './offline'
 import { AUTO_LOGIN_KEY } from './supabase'
@@ -185,13 +185,28 @@ function changed(me: Session) {
   me.channel?.postMessage('changed')
 }
 
+/** 이 탭이나 다른 탭이 지금 보내는 중이에요. 보내는 중인 변경은 고치면 안 돼요. */
+async function sending(me: Session): Promise<boolean> {
+  if (me.running) return true
+  if (!me.db || !navigator.locks) return false
+  return !!(await navigator.locks.query()).held?.some(l => l.name === me.name)
+}
+
 function mutate(op: Op): Promise<void> {
   return exclusive(async () => {
     const me = need()
     const next = cloneData(me.view)
     applyOp(next, op, resolve)
-    const seq = me.db ? Number(await req(me.db.transaction('outbox', 'readwrite').objectStore('outbox').add(op))) : ++me.seq
-    me.outbox.push({ seq, op })
+    const last = me.outbox.at(-1)
+    if (op.type === 'saveMemo' && last?.op.type === 'saveMemo' && resolve(last.op.id) === resolve(op.id) && !(await sending(me))) {
+      // 자동 저장이 잦아서, 아직 보내지 않은 같은 메모 저장은 하나로 합쳐요. 기준(base)은 처음 것을 그대로 둬요.
+      const merged: Op = { ...op, id: last.op.id, base: last.op.base }
+      if (me.db) await write(me.db, ['outbox'], t => t.objectStore('outbox').put(merged, last.seq))
+      last.op = merged
+    } else {
+      const seq = me.db ? Number(await req(me.db.transaction('outbox', 'readwrite').objectStore('outbox').add(op))) : ++me.seq
+      me.outbox.push({ seq, op })
+    }
     me.view = next
     changed(me)
     void sync(me, false)
@@ -291,7 +306,8 @@ async function pullAll(me: Session) {
     for (const x of index) {
       const row = fresh.get(x.id) ?? old.memos.get(x.id)
       if (!row) continue
-      memos.set(x.id, row.sectionId === x.sectionId && row.position === x.position ? row : { ...row, sectionId: x.sectionId, position: x.position })
+      const same = row.sectionId === x.sectionId && row.position === x.position && row.pinned === x.pinned && row.deletedAt === x.deletedAt
+      memos.set(x.id, same ? row : { ...row, sectionId: x.sectionId, position: x.position, pinned: x.pinned, deletedAt: x.deletedAt })
     }
     const next: Data = {
       memos,
@@ -410,7 +426,8 @@ export const store = {
 
   createSection: (name: string, parentId: number | null) => mutate({ type: 'createSection', id: tempId(), name, parentId, at: now() }),
   renameSection: (id: number, name: string) => mutate({ type: 'renameSection', id, name }),
-  deleteSection: (id: number) => mutate({ type: 'deleteSection', id }),
+  /** 하위 섹션까지 지우고, 안의 메모는 미분류로 옮겨 휴지통에 넣어요. */
+  deleteSection: (id: number) => mutate({ type: 'deleteSection', id, at: now() }),
   /** parentId가 null이면 최상위, beforeId가 null이면 그 안의 맨 아래로 옮겨요. */
   moveSection: (id: number, parentId: number | null, beforeId: number | null = null) =>
     mutate({ type: 'moveSection', id, parentId, beforeId }),
@@ -432,8 +449,13 @@ export const store = {
       const stamp = me.snapshot.memos.get(id)?.updatedAt
       if (stamp) bases[id] = stamp
     }
-    return mutate({ type: 'deleteMemos', ids, bases })
+    return mutate({ type: 'deleteMemos', ids, bases, at: now() })
   },
+  /** 휴지통: 최근에 넣은 것부터. 30일이 지나면 서버가 지워요. */
+  trash: async (): Promise<MemoSummary[]> => trashMemos((await view()).d),
+  restoreMemos: (ids: number[]) => mutate({ type: 'restoreMemos', ids }),
+  purgeMemos: (ids: number[]) => mutate({ type: 'purgeMemos', ids }),
+  pinMemos: (ids: number[], pinned: boolean) => mutate({ type: 'pinMemos', ids, pinned }),
   deleteMemo: (id: number) => store.deleteMemos([id]),
   /** 여러 메모를 한 섹션으로 옮겨요. 수정일도 바뀌어요. */
   moveMemos: (ids: number[], sectionId: number) => mutate({ type: 'moveMemos', ids, sectionId, at: now() }),

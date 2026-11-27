@@ -1,5 +1,8 @@
 import { FunctionsHttpError, isAuthRetryableFetchError, type AuthError, type PostgrestError } from '@supabase/supabase-js'
 import { ApiError, type MemoRow, type Remote, type SectionRow } from './offline'
+
+/** 메모마다 본문 없이 바뀌었는지 알 만큼만. 수정일이 그대로여도 순서·섹션·고정·휴지통은 바뀔 수 있어요. */
+type MemoIndexRow = Pick<MemoRow, 'id' | 'sectionId' | 'position' | 'updatedAt' | 'pinned' | 'deletedAt'>
 import { authStorage, supabase } from './supabase'
 
 export { ApiError }
@@ -24,6 +27,10 @@ export type Memo = {
   contentHtml: string | null
   createdAt: string
   updatedAt: string
+  /** 목록 맨 위에 고정 */
+  pinned: boolean
+  /** 휴지통에 넣은 때. null이면 휴지통에 없어요. */
+  deletedAt: string | null
 }
 export type MemoSummary = Omit<Memo, 'content' | 'contentHtml'> & { preview: string }
 /** totalCapped이면 total은 "이 수 이상"이에요. */
@@ -88,11 +95,11 @@ async function fn<T>(name: string, body: FormData | Record<string, unknown>): Pr
 
 type DbMemo = {
   id: number; section_id: number; position: number; title: string; content: string; content_html: string | null
-  created_at: string; updated_at: string
+  created_at: string; updated_at: string; pinned: boolean; deleted_at: string | null
 }
 const toRow = (r: DbMemo): MemoRow => ({
   id: r.id, sectionId: r.section_id, position: r.position, title: r.title, content: r.content, contentHtml: r.content_html,
-  createdAt: r.created_at, updatedAt: r.updated_at,
+  createdAt: r.created_at, updatedAt: r.updated_at, pinned: r.pinned, deletedAt: r.deleted_at,
 })
 type DbSection = { id: number; parent_id: number | null; name: string; is_default: boolean; position: number; created_at: string }
 const toSection = (r: DbSection): SectionRow => ({
@@ -123,7 +130,7 @@ const chunks = <T,>(list: T[], size = 100) =>
 
 /** 서버를 직접 부르는 일. 화면은 store.ts를 거쳐서 써요(오프라인 편집). */
 export const remote: Remote & {
-  memoIndex(): Promise<{ id: number; sectionId: number; position: number; updatedAt: string }[]>
+  memoIndex(): Promise<MemoIndexRow[]>
   memosByIds(ids: number[]): Promise<MemoRow[]>
   imageBlob(id: number): Promise<Blob>
 } = {
@@ -146,6 +153,9 @@ export const remote: Remote & {
   memo: id => db<DbMemo[]>(supabase.from('memos').select('*').eq('id', id)).then(rows => (rows[0] ? toRow(rows[0]) : null)),
   moveMemos: (ids, sectionId) => db<void>(supabase.rpc('move_memos', { p_ids: ids, p_section_id: sectionId })),
   deleteMemos: ids => db<void>(supabase.rpc('delete_memos', { p_ids: ids })),
+  restoreMemos: ids => db<void>(supabase.rpc('restore_memos', { p_ids: ids })),
+  purgeMemos: ids => db<void>(supabase.rpc('purge_memos', { p_ids: ids })),
+  pinMemos: (ids, pinned) => db<void>(supabase.rpc('pin_memos', { p_ids: ids, p_pinned: pinned })),
   moveMemo: (id, afterId, beforeId) => db<void>(supabase.rpc('move_memo', { p_id: id, p_after_id: afterId, p_before_id: beforeId })),
   /** 그림은 화면이 미리 줄여서 줘요(images.ts shrinkImage). */
   uploadImage: async blob => {
@@ -156,11 +166,13 @@ export const remote: Remote & {
 
   /** 모든 메모의 번호와 수정 시각. 한 번에 1,000줄까지 와서 나눠 받아요. */
   memoIndex: async () => {
-    const all: { id: number; sectionId: number; position: number; updatedAt: string }[] = []
+    const all: MemoIndexRow[] = []
     for (let from = 0; ; from += 1000) {
-      const rows = await db<{ id: number; section_id: number; position: number; updated_at: string }[]>(
-        supabase.from('memos').select('id, section_id, position, updated_at').order('id').range(from, from + 999))
-      all.push(...rows.map(r => ({ id: r.id, sectionId: r.section_id, position: r.position, updatedAt: r.updated_at })))
+      const rows = await db<{ id: number; section_id: number; position: number; updated_at: string; pinned: boolean; deleted_at: string | null }[]>(
+        supabase.from('memos').select('id, section_id, position, updated_at, pinned, deleted_at').order('id').range(from, from + 999))
+      all.push(...rows.map(r => ({
+        id: r.id, sectionId: r.section_id, position: r.position, updatedAt: r.updated_at, pinned: r.pinned, deletedAt: r.deleted_at,
+      })))
       if (rows.length < 1000) return all
     }
   },
