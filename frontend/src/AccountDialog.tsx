@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { api, ApiError, type User } from './api'
 import { useConfirm } from './confirm'
 import DesktopDownload from './DesktopDownload'
+import { store } from './store'
 import { IMAGE_QUOTA_MB } from './images'
 
 const PASSWORD_RULE = /^[\x21-\x7E]{8,64}$/
@@ -120,6 +121,7 @@ function DeleteAccount({ email, confirm, onDeleted }: {
     setStatus('삭제하는 중')
     try {
       await api.deleteAccount(password)
+      await store.destroy()
       onDeleted()
     } catch (err) {
       setStatus('')

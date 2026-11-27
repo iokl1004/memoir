@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import AccountDialog from './AccountDialog'
 import { api, ApiError, type MemoFilter, type MemoSort, type MemoSummary, type Section, type User } from './api'
 import { useConfirm } from './confirm'
@@ -10,11 +10,13 @@ import SectionOptions from './SectionOptions'
 import { buildTree, subtreeIds, type SectionNode, type SectionSort } from './sectionTree'
 import { touchOnly, useMediaQuery } from './shared'
 import SortPicker from './SortPicker'
+import { onStore, resolve, store, useSyncStatus } from './store'
 import { joinMemoSort, MEMO_SORT_FIELDS, savedSectionSort, savedSort, splitMemoSort } from './sorting'
 import ThemeToggle from './ThemeToggle'
 
 // 편집기(TipTap)는 크니까 메모를 처음 열 때 불러와요. 첫 화면이 가벼워져요.
-const MemoEditor = lazy(() => import('./MemoEditor'))
+const loadEditor = () => import('./MemoEditor')
+const MemoEditor = lazy(loadEditor)
 
 type Selection = { kind: 'none' } | { kind: 'new' } | { kind: 'memo'; id: number }
 
@@ -53,8 +55,11 @@ export default function Workspace({ user, onLogout }: { user: User; onLogout: ()
   const [draggingMemos, setDraggingMemos] = useState<MemoSummary[] | null>(null)
   /** 여러 개 고른 메모 id. 하나라도 있으면 목록에 동그란 체크박스가 보여요. */
   const [checked, setChecked] = useState<Set<number>>(new Set())
-  /** 열린 메모가 바깥에서 바뀌면(섹션 이동) 편집기를 다시 불러오려고 올려요. */
-  const [editorVersion, setEditorVersion] = useState(0)
+  /** 편집기를 새로 여는 번호. 다른 메모를 고르거나, 열린 메모가 바깥에서 바뀌면(섹션 이동) 올려요. */
+  const [editorKey, setEditorKey] = useState(0)
+  /** 이 기기의 저장소가 바뀔 때마다(내가 고침, 서버에서 받음, 다른 탭) 올려서 목록을 다시 읽어요. */
+  const [rev, setRev] = useState(0)
+  const sync = useSyncStatus()
   /** 사이드바가 들어가는 좁은 화면(태블릿, 휴대폰)에서는 섹션을 왼쪽에서 밀려 나오는 서랍으로 보여줘요. */
   const narrow = useMediaQuery('(max-width: 1099px)')
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -68,23 +73,46 @@ export default function Workspace({ user, onLogout }: { user: User; onLogout: ()
     else setStatus(err instanceof ApiError ? err.message : '서버와 연결하지 못했어요.')
   }, [onLogout])
 
-  const loadSections = useCallback(() => api.sections().then(setSections, fail), [fail])
+  const loadSections = useCallback(() => store.sections().then(setSections, fail), [fail])
 
-  const loadMemos = useCallback((f: MemoFilter, s: MemoSort, pageNumber: number) =>
-    api.memos(f, s, pageNumber).then(p => {
-      setMemos(prev => (pageNumber === 0 ? p.items : [...prev, ...p.items]))
-      setPage({ number: p.page, hasNext: p.hasNext, total: p.total, capped: p.totalCapped })
+  /** keep이면 0쪽부터 pageNumber쪽까지 한 번에 다시 읽어요(더 보기로 펼친 목록이 줄어들지 않게). */
+  const loadMemos = useCallback((f: MemoFilter, s: MemoSort, pageNumber: number, keep = false) =>
+    store.memos(f, s, keep ? 0 : pageNumber, keep ? 20 * (pageNumber + 1) : 20).then(p => {
+      setMemos(prev => (keep || pageNumber === 0 ? p.items : [...prev, ...p.items]))
+      setPage({ number: pageNumber, hasNext: p.hasNext, total: p.total, capped: p.totalCapped })
       setLoaded(true)
     }, fail), [fail])
 
-  useEffect(() => { loadSections() }, [loadSections])
+  // 저장소는 로그인한 동안 열어 둬요. 메모와 섹션은 이 기기에서 바로 읽고, 서버와는 뒤에서 맞춰요.
+  useEffect(() => {
+    void store.open(user)
+    // 편집기도 미리 받아 둬요. 오프라인에서 처음 메모를 열 때도 편집기가 떠요.
+    void loadEditor()
+    return () => store.close()
+  }, [user])
+  useEffect(() => onStore('change', () => setRev(r => r + 1)), [])
+  useEffect(() => onStore('notice', setStatus), [])
+  useEffect(() => onStore('auth', onLogout), [onLogout])
+  // 보낼 때 사본으로 저장했거나 새로 살린 메모로 고른 메모를 바꿔요. 편집기는 쓰던 내용 그대로예요.
+  useEffect(() => onStore('replaced', ({ from, row }) => setSelection(sel =>
+    sel.kind === 'memo' && resolve(sel.id) === resolve(from) ? { kind: 'memo', id: row.id } : sel)), [])
+
+  useEffect(() => { loadSections() }, [loadSections, rev])
   useEffect(() => {
     if (!drawer) return
     const close = (e: KeyboardEvent) => { if (e.key === 'Escape') setDrawerOpen(false) }
     window.addEventListener('keydown', close)
     return () => window.removeEventListener('keydown', close)
   }, [drawer])
-  useEffect(() => { loadMemos(filter, sort, 0) }, [filter, sort, loadMemos])
+  // 검색 조건이 바뀌면 첫 쪽부터, 저장소만 바뀌면 지금 펼친 만큼 다시 읽어요.
+  const shown = useRef({ key: '', page: 0 })
+  useEffect(() => { shown.current.page = page.number }, [page.number])
+  useEffect(() => {
+    const key = JSON.stringify([filter, sort])
+    const same = shown.current.key === key
+    shown.current.key = key
+    loadMemos(filter, sort, same ? shown.current.page : 0, same)
+  }, [filter, sort, rev, loadMemos])
 
   /** 저장하지 않은 내용이 있으면 확인 창으로 물어보고, 떠나도 되면 true */
   async function confirmLeave(): Promise<boolean> {
@@ -101,6 +129,8 @@ export default function Workspace({ user, onLogout }: { user: User; onLogout: ()
   async function select(next: Selection) {
     if (!(await confirmLeave())) return
     setDirty(false)
+    const same = next.kind === selection.kind && (next.kind !== 'memo' || (selection.kind === 'memo' && resolve(selection.id) === resolve(next.id)))
+    if (!same) setEditorKey(k => k + 1)
     setSelection(next)
   }
 
@@ -120,6 +150,7 @@ export default function Workspace({ user, onLogout }: { user: User; onLogout: ()
     setStatus('')
     setChecked(new Set())
     setFilter({ sectionId: memo.sectionId })
+    setEditorKey(k => k + 1)
     setSelection({ kind: 'memo', id: memo.id })
   }
 
@@ -153,13 +184,13 @@ export default function Workspace({ user, onLogout }: { user: User; onLogout: ()
   async function moveMemosToSection(list: MemoSummary[], section: SectionNode) {
     const moving = list.filter(m => m.sectionId !== section.id)
     if (moving.length === 0) return
-    const open = selection.kind === 'memo' && moving.some(m => m.id === selection.id)
+    const open = selection.kind === 'memo' && moving.some(m => m.id === resolve(selection.id))
     if (open && !(await confirmLeave())) return
     try {
-      await api.moveMemos(moving.map(m => m.id), section.id)
+      await store.moveMemos(moving.map(m => m.id), section.id)
       if (open) {
         setDirty(false)
-        setEditorVersion(v => v + 1)
+        setEditorKey(k => k + 1)
       }
       setStatus(moving.length === 1
         ? `'${moving[0].title}'을(를) '${section.path}'(으)로 옮겼어요.`
@@ -172,12 +203,23 @@ export default function Workspace({ user, onLogout }: { user: User; onLogout: ()
   }
 
   function refreshAfterChange() {
-    loadSections()
-    loadMemos(filter, sort, 0)
+    setRev(r => r + 1)
   }
 
   async function logout() {
     if (!(await confirmLeave())) return
+    // 보내지 못한 변경이 있으면 먼저 보내 보고, 그래도 남으면(오프라인) 사라진다고 물어봐요.
+    await store.sync().catch(() => undefined)
+    const pending = store.pending()
+    if (pending > 0 && !(await confirm({
+      title: '서버에 보내지 못한 변경이 있어요',
+      body: `이 기기에만 있는 변경 ${pending}개가 로그아웃하면 사라져요. 인터넷에 연결한 뒤 로그아웃하면 모두 서버에 저장돼요.`,
+      confirmLabel: '그래도 로그아웃',
+      cancelLabel: '로그인 유지',
+      danger: true,
+    }))) return
+    // 로그아웃하면 이 기기에 남긴 메모와 그림도 지워요(함께 쓰는 PC).
+    await store.destroy()
     await api.logout().catch(() => undefined)
     onLogout()
   }
@@ -194,8 +236,8 @@ export default function Workspace({ user, onLogout }: { user: User; onLogout: ()
     })
     if (!ok) return
     try {
-      await api.deleteMemos(list.map(m => m.id))
-      if (selection.kind === 'memo' && list.some(m => m.id === selection.id)) {
+      await store.deleteMemos(list.map(m => m.id))
+      if (selection.kind === 'memo' && list.some(m => m.id === resolve(selection.id))) {
         setDirty(false)
         setSelection({ kind: 'none' })
       }
@@ -215,7 +257,7 @@ export default function Workspace({ user, onLogout }: { user: User; onLogout: ()
     next.splice(to, 0, moved)
     setMemos(next)
     try {
-      await api.moveMemo(moved.id, next[to - 1]?.id ?? null, next[to + 1]?.id ?? null)
+      await store.moveMemo(moved.id, next[to - 1]?.id ?? null, next[to + 1]?.id ?? null)
       setStatus(`'${moved.title}'을(를) ${to + 1}번째로 옮겼어요.`)
     } catch (err) {
       fail(err)
@@ -225,7 +267,8 @@ export default function Workspace({ user, onLogout }: { user: User; onLogout: ()
 
   const defaultSection = sections.find(s => s.isDefault)
   const searching = !!(filter.q || filter.from || filter.to)
-  const currentSection = tree.find(s => s.id === filter.sectionId)
+  const activeSectionId = filter.sectionId === undefined ? undefined : resolve(filter.sectionId)
+  const currentSection = tree.find(s => s.id === activeSectionId)
   const listTitle = searching ? '검색 결과' : currentSection?.name ?? '전체 메모'
   const sectionPath = (id: number) => tree.find(s => s.id === id)?.path
 
@@ -240,6 +283,13 @@ export default function Workspace({ user, onLogout }: { user: User; onLogout: ()
         <SearchBar key={JSON.stringify([filter.q, filter.from, filter.to])} tree={tree} filter={filter}
                    onSearch={applyFilter} onOpenMemo={openFromSearch} />
         <div className="topbar__user">
+          {/* 인터넷이 없거나 서버에 보낼 변경이 남았을 때만 보여요. 다 보내면 비어요. */}
+          <span className="sync" role="status" data-offline={sync.offline || undefined}
+                title={sync.offline ? '이 기기에 저장해 두고, 인터넷에 연결되면 서버에 보내요.' : undefined}>
+            {sync.offline
+              ? sync.pending > 0 ? `오프라인 · 보낼 변경 ${sync.pending}개` : '오프라인'
+              : sync.pending > 0 ? `보내는 중 · ${sync.pending}개` : ''}
+          </span>
           <ThemeToggle />
           <span className="topbar__email">{user.email}</span>
           <button type="button" className="textbtn" onClick={() => setAccountOpen(true)}>계정</button>
@@ -253,13 +303,13 @@ export default function Workspace({ user, onLogout }: { user: User; onLogout: ()
         onSortChange={changeSectionSort}
         draggingMemos={draggingMemos}
         onMemosDrop={moveMemosToSection}
-        activeId={filter.sectionId}
+        activeId={activeSectionId}
         onSelect={id => { setDrawerOpen(false); applyFilter({ ...filter, sectionId: id }) }}
         onChanged={refreshAfterChange}
         onDeleted={id => {
           // 지운 섹션과 하위 섹션, 그 안의 메모는 서버에서 모두 사라졌어요.
           const removed = subtreeIds(tree, id)
-          const openMemo = selection.kind === 'memo' ? memos.find(m => m.id === selection.id) : undefined
+          const openMemo = selection.kind === 'memo' ? memos.find(m => m.id === resolve(selection.id)) : undefined
           if (openMemo && removed.has(openMemo.sectionId)) {
             setDirty(false)
             setSelection({ kind: 'none' })
@@ -338,7 +388,7 @@ export default function Workspace({ user, onLogout }: { user: User; onLogout: ()
           <MemoList
             memos={memos}
             sort={sort}
-            selectedId={selection.kind === 'memo' ? selection.id : null}
+            selectedId={selection.kind === 'memo' ? resolve(selection.id) : null}
             sectionLabel={filter.sectionId === undefined ? sectionPath : undefined}
             onOpen={id => {
               // 검색 결과에서 연 메모는 미리보기처럼 그 메모의 섹션으로 옮겨 가요.
@@ -395,7 +445,7 @@ export default function Workspace({ user, onLogout }: { user: User; onLogout: ()
         ) : (
           <Suspense fallback={<p className="pane__loading" role="status">편집기를 불러오는 중</p>}>
           <MemoEditor
-            key={selection.kind === 'memo' ? `${selection.id}-${editorVersion}` : 'new'}
+            key={editorKey}
             memoId={selection.kind === 'memo' ? selection.id : null}
             initialSectionId={filter.sectionId ?? defaultSection?.id}
             onDirtyChange={setDirty}

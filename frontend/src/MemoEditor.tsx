@@ -3,9 +3,10 @@ import { EditorContent, useEditor, type Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Image from '@tiptap/extension-image'
 import { Placeholder } from '@tiptap/extensions'
-import { api, ApiError, type Memo } from './api'
+import { ApiError, type Memo } from './api'
 import { editorSrc, toEditorHtml, toStoredHtml } from './images'
 import { useConfirm } from './confirm'
+import { onStore, resolve, store } from './store'
 
 const timeFmt = new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium', timeStyle: 'short' })
 const MAX_CONTENT = 20_000
@@ -47,7 +48,10 @@ export default function MemoEditor({ memoId, initialSectionId, onDirtyChange, on
   onError: (err: unknown) => void
 }) {
   const confirm = useConfirm()
-  const [memo, setMemo] = useState<Memo | null>(null)
+  const [memo, setMemoState] = useState<Memo | null>(null)
+  // 바로 읽을 수 있게 ref에도 둬요. 고른 메모 번호가 바뀌어도(새 메모 저장, 충돌 사본) 같은 메모면 다시 불러오지 않아요.
+  const memoRef = useRef<Memo | null>(null)
+  const setMemo = (m: Memo) => { memoRef.current = m; setMemoState(m) }
   const [saved, setSaved] = useState<Draft>({ title: '', html: '' })
   const [draft, setDraft] = useState<Draft>(saved)
   const [textLength, setTextLength] = useState(0)
@@ -65,7 +69,7 @@ export default function MemoEditor({ memoId, initialSectionId, onDirtyChange, on
     setStatus('그림을 올리는 중')
     for (const file of ok) {
       try {
-        const { id } = await api.uploadImage(file)
+        const { id } = await store.uploadImage(file)
         const src = await editorSrc(id)
         const editor = editorRef.current
         if (!editor || editor.isDestroyed) return
@@ -126,8 +130,8 @@ export default function MemoEditor({ memoId, initialSectionId, onDirtyChange, on
   useEffect(() => { editorRef.current = editor }, [editor])
 
   useEffect(() => {
-    if (memoId === null || !editor) return
-    api.memo(memoId).then(async m => {
+    if (memoId === null || !editor || memoRef.current?.id === memoId) return
+    store.memo(memoId).then(async m => {
       const html = await toEditorHtml(m.contentHtml ?? textToHtml(m.content))
       if (editor.isDestroyed) return
       editor.commands.setContent(html, { emitUpdate: false })
@@ -138,7 +142,21 @@ export default function MemoEditor({ memoId, initialSectionId, onDirtyChange, on
       setDraft(d)
       setTextLength(editor.getText().length)
     }, onError)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [memoId, editor, onError])
+
+  // 보낼 때 다른 기기에서 고친 메모와 겹쳐 사본으로 저장했으면, 이제부터는 그 사본을 고쳐요(쓰던 내용은 그대로).
+  useEffect(() => onStore('replaced', ({ from, row }) => {
+    const m = memoRef.current
+    if (!m || resolve(m.id) !== resolve(from)) return
+    setMemo(row)
+    // 저장 뒤에 제목을 더 고치는 중이면 그 제목은 그대로 둬요.
+    setSaved(prev => {
+      setDraft(d => (d.title === prev.title ? { ...d, title: row.title } : d))
+      return { ...prev, title: row.title }
+    })
+    setStatus(`서버에서 바뀐 메모라, 고친 내용은 '${row.title}'(으)로 따로 저장했어요.`)
+  }), [])
 
   const dirty = draft.title !== saved.title || draft.html !== saved.html
   useEffect(() => { onDirtyChange(dirty) }, [dirty, onDirtyChange])
@@ -160,13 +178,13 @@ export default function MemoEditor({ memoId, initialSectionId, onDirtyChange, on
     try {
       const html = editor.getHTML()
       const body = { title: draft.title, contentHtml: toStoredHtml(html), content: editor.getText({ blockSeparator: '\n' }), sectionId }
-      const result = memo ? await api.updateMemo(memo.id, body) : await api.createMemo(body)
+      const result = memo ? await store.updateMemo(memo.id, body, memo) : await store.createMemo(body)
       // 지금 편집기 값을 기준으로 둬요. 서버가 정리한 HTML과 모양이 조금 달라도 "저장 안 됨"이 뜨지 않게요.
       const d = { title: result.title, html }
       setMemo(result)
       setSaved(d)
       setDraft(d)
-      setStatus('저장했어요.')
+      setStatus(navigator.onLine ? '저장했어요.' : '이 기기에 저장했어요. 인터넷에 연결되면 서버에 보낼게요.')
       onSaved(result)
     } catch (err) {
       // 실패해도 쓴 내용은 그대로 남겨요.
@@ -187,7 +205,7 @@ export default function MemoEditor({ memoId, initialSectionId, onDirtyChange, on
     })
     if (!ok) return
     try {
-      await api.deleteMemo(memo.id)
+      await store.deleteMemo(memo.id)
       onDeleted()
     } catch (err) {
       onError(err)

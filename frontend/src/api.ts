@@ -1,6 +1,8 @@
-import { FunctionsHttpError, type AuthError, type PostgrestError } from '@supabase/supabase-js'
-import { shrinkImage } from './images'
-import { supabase } from './supabase'
+import { FunctionsHttpError, isAuthRetryableFetchError, type AuthError, type PostgrestError } from '@supabase/supabase-js'
+import { ApiError, type MemoRow, type Remote, type SectionRow } from './offline'
+import { authStorage, supabase } from './supabase'
+
+export { ApiError }
 
 export type User = { id: string; email: string }
 /** memoCount는 이 섹션에 바로 쓴 메모 수예요. 하위까지 합친 수는 sectionTree.ts가 계산해요. */
@@ -29,14 +31,6 @@ export type MemoPage = { items: MemoSummary[]; page: number; total: number; tota
 export type MemoSort = 'CREATED_DESC' | 'CREATED_ASC' | 'UPDATED_DESC' | 'UPDATED_ASC' | 'TITLE_ASC' | 'TITLE_DESC' | 'CUSTOM'
 export type MemoFilter = { sectionId?: number; q?: string; from?: string; to?: string }
 
-/** 화면에 그대로 보여줄 문구와 HTTP 상태. 401이면 로그인 화면으로 돌아가요. */
-export class ApiError extends Error {
-  status: number
-  constructor(status: number, message: string) {
-    super(message)
-    this.status = status
-  }
-}
 
 const CONNECTION = '서버와 연결하지 못했어요. 잠시 뒤 다시 시도해 주세요.'
 
@@ -92,43 +86,108 @@ async function fn<T>(name: string, body: FormData | Record<string, unknown>): Pr
   return data as T
 }
 
-type MemoRow = {
-  id: number; section_id: number; title: string; content: string; content_html: string | null
+type DbMemo = {
+  id: number; section_id: number; position: number; title: string; content: string; content_html: string | null
   created_at: string; updated_at: string
 }
-const toMemo = (r: MemoRow): Memo => ({
-  id: r.id, sectionId: r.section_id, title: r.title, content: r.content, contentHtml: r.content_html,
+const toRow = (r: DbMemo): MemoRow => ({
+  id: r.id, sectionId: r.section_id, position: r.position, title: r.title, content: r.content, contentHtml: r.content_html,
   createdAt: r.created_at, updatedAt: r.updated_at,
 })
-type SectionRow = { id: number; parent_id: number | null; name: string; is_default: boolean; memo_count?: number; created_at: string }
-const toSection = (r: SectionRow): Section => ({
-  id: r.id, parentId: r.parent_id, name: r.name, isDefault: r.is_default, memoCount: r.memo_count ?? 0, createdAt: r.created_at,
+type DbSection = { id: number; parent_id: number | null; name: string; is_default: boolean; position: number; created_at: string }
+const toSection = (r: DbSection): SectionRow => ({
+  id: r.id, parentId: r.parent_id, name: r.name, isDefault: r.is_default, position: r.position, createdAt: r.created_at,
 })
+
+/** 오프라인에서 다시 열 때 쓰는 마지막 로그인 사용자. 로그인 정보와 같은 곳(자동 로그인에 따라)에 둬요. */
+const USER_KEY = 'memoir-user'
+function remember(u: User): User {
+  authStorage.setItem(USER_KEY, JSON.stringify(u))
+  return u
+}
 
 /** 지금 로그인한 사용자. 없으면 null */
 export async function currentUser(): Promise<User | null> {
-  const { data } = await supabase.auth.getSession()
+  const { data, error } = await supabase.auth.getSession()
   const u = data.session?.user
-  return u ? { id: u.id, email: u.email ?? '' } : null
+  if (u) return remember({ id: u.id, email: u.email ?? '' })
+  // 인터넷이 없어서 로그인을 새로 고치지 못했을 뿐이면, 로그인은 그대로 있어요. 연결되면 supabase가 다시 고쳐요.
+  if (error && isAuthRetryableFetchError(error)) {
+    try { return JSON.parse(authStorage.getItem(USER_KEY) ?? 'null') } catch { return null }
+  }
+  return null
 }
 
-type SaveBody = { sectionId: number; title: string; contentHtml: string; content: string }
-const saveMemo = (id: number | null, m: SaveBody) =>
-  db<MemoRow>(supabase.rpc('save_memo', {
+const chunks = <T,>(list: T[], size = 100) =>
+  Array.from({ length: Math.ceil(list.length / size) }, (_, i) => list.slice(i * size, (i + 1) * size))
+
+/** 서버를 직접 부르는 일. 화면은 store.ts를 거쳐서 써요(오프라인 편집). */
+export const remote: Remote & {
+  memoIndex(): Promise<{ id: number; sectionId: number; position: number; updatedAt: string }[]>
+  memosByIds(ids: number[]): Promise<MemoRow[]>
+  imageBlob(id: number): Promise<Blob>
+} = {
+  createSection: (name, parentId) =>
+    db<DbSection>(supabase.rpc('create_section', { p_name: name, p_parent_id: parentId })).then(toSection),
+  renameSection: (id, name) => db<void>(supabase.rpc('rename_section', { p_id: id, p_name: name })).then(() => undefined),
+  deleteSection: id => db<void>(supabase.rpc('delete_section', { p_id: id })),
+  moveSection: (id, parentId, beforeId) =>
+    db<void>(supabase.rpc('move_section', { p_id: id, p_parent_id: parentId, p_before_id: beforeId })).then(() => undefined),
+  sections: () =>
+    db<DbSection[]>(supabase.from('sections').select('id, parent_id, name, is_default, position, created_at')).then(rows => rows.map(toSection)),
+  saveMemo: (id, m) => db<DbMemo>(supabase.rpc('save_memo', {
     p_id: id, p_section_id: m.sectionId, p_title: m.title, p_html: m.contentHtml, p_text: m.content,
-  })).then(toMemo)
+  })).then(toRow),
+  memoStamps: async ids => {
+    const rows = (await Promise.all(chunks(ids).map(part =>
+      db<{ id: number; updated_at: string }[]>(supabase.from('memos').select('id, updated_at').in('id', part))))).flat()
+    return new Map(rows.map(r => [r.id, r.updated_at]))
+  },
+  memo: id => db<DbMemo[]>(supabase.from('memos').select('*').eq('id', id)).then(rows => (rows[0] ? toRow(rows[0]) : null)),
+  moveMemos: (ids, sectionId) => db<void>(supabase.rpc('move_memos', { p_ids: ids, p_section_id: sectionId })),
+  deleteMemos: ids => db<void>(supabase.rpc('delete_memos', { p_ids: ids })),
+  moveMemo: (id, afterId, beforeId) => db<void>(supabase.rpc('move_memo', { p_id: id, p_after_id: afterId, p_before_id: beforeId })),
+  /** 그림은 화면이 미리 줄여서 줘요(images.ts shrinkImage). */
+  uploadImage: async blob => {
+    const form = new FormData()
+    form.append('file', blob, 'image')
+    return (await fn<{ id: number }>('upload-image', form)).id
+  },
+
+  /** 모든 메모의 번호와 수정 시각. 한 번에 1,000줄까지 와서 나눠 받아요. */
+  memoIndex: async () => {
+    const all: { id: number; sectionId: number; position: number; updatedAt: string }[] = []
+    for (let from = 0; ; from += 1000) {
+      const rows = await db<{ id: number; section_id: number; position: number; updated_at: string }[]>(
+        supabase.from('memos').select('id, section_id, position, updated_at').order('id').range(from, from + 999))
+      all.push(...rows.map(r => ({ id: r.id, sectionId: r.section_id, position: r.position, updatedAt: r.updated_at })))
+      if (rows.length < 1000) return all
+    }
+  },
+  memosByIds: async ids =>
+    (await Promise.all(chunks(ids).map(part => db<DbMemo[]>(supabase.from('memos').select('*').in('id', part))))).flat().map(toRow),
+  /** 비공개 Storage의 그림 파일. 잠깐 쓰는 서명 주소로 받아요. */
+  imageBlob: async id => {
+    const userId = (await supabase.auth.getSession()).data.session?.user.id
+    const { data, error } = await supabase.storage.from('images').createSignedUrl(`${userId}/${id}`, 60)
+    if (error || !data) throw new ApiError(404, '그림을 찾을 수 없어요.')
+    const res = await fetch(data.signedUrl)
+    if (!res.ok) throw new ApiError(res.status, '그림을 받지 못했어요.')
+    return res.blob()
+  },
+}
 
 export const api = {
   /** captchaToken: 가입, 로그인, 패스워드 찾기에는 항상 필요해요. */
   signup: async (email: string, password: string, captchaToken?: string): Promise<User> => {
     const { data } = await auth(supabase.auth.signUp({ email, password, options: { captchaToken } }))
-    return { id: data.user!.id, email: data.user!.email ?? email }
+    return remember({ id: data.user!.id, email: data.user!.email ?? email })
   },
   login: async (email: string, password: string, captchaToken?: string): Promise<User> => {
     const { data } = await auth(supabase.auth.signInWithPassword({ email, password, options: { captchaToken } }))
-    return { id: data.user!.id, email: data.user!.email ?? email }
+    return remember({ id: data.user!.id, email: data.user!.email ?? email })
   },
-  logout: () => supabase.auth.signOut({ scope: 'local' }).then(() => undefined),
+  logout: () => { authStorage.removeItem(USER_KEY); return supabase.auth.signOut({ scope: 'local' }).then(() => undefined) },
   /** 패스워드 찾기 메일. 가입하지 않은 이메일이어도 똑같이 성공해요(가입 여부를 숨겨요). */
   requestPasswordReset: (email: string, captchaToken?: string) =>
     auth(supabase.auth.resetPasswordForEmail(email, { captchaToken })).then(() => undefined),
@@ -146,44 +205,9 @@ export const api = {
   /** 계정과 모든 메모, 그림을 지우고 로그아웃해요. */
   deleteAccount: async (password: string) => {
     await fn('delete-account', { password })
+    authStorage.removeItem(USER_KEY)
     await supabase.auth.signOut({ scope: 'local' })
   },
   /** 그림 저장 공간에서 쓴 바이트 수 */
   imageUsage: () => db<number>(supabase.rpc('image_usage')),
-
-  sections: () => db<SectionRow[]>(supabase.rpc('list_sections')).then(rows => rows.map(toSection)),
-  createSection: (name: string, parentId: number | null) =>
-    db<SectionRow>(supabase.rpc('create_section', { p_name: name, p_parent_id: parentId })).then(toSection),
-  renameSection: (id: number, name: string) =>
-    db<SectionRow>(supabase.rpc('rename_section', { p_id: id, p_name: name })).then(toSection),
-  deleteSection: (id: number) => db<void>(supabase.rpc('delete_section', { p_id: id })),
-  /** parentId가 null이면 최상위, beforeId가 null이면 그 안의 맨 아래로 옮겨요. 하위 섹션과 메모는 함께 따라가요. */
-  moveSection: (id: number, parentId: number | null, beforeId: number | null = null) =>
-    db<SectionRow>(supabase.rpc('move_section', { p_id: id, p_parent_id: parentId, p_before_id: beforeId })).then(toSection),
-
-  memos: (filter: MemoFilter, sort: MemoSort, page: number, size = 20) =>
-    db<MemoPage>(supabase.rpc('search_memos', {
-      p_section_id: filter.sectionId ?? null, p_q: filter.q || null, p_from: filter.from || null, p_to: filter.to || null,
-      p_sort: sort, p_page: page, p_size: size,
-    })),
-  memo: (id: number) =>
-    db<MemoRow>(supabase.from('memos').select('*').eq('id', id).single()).then(toMemo, err => {
-      throw err instanceof ApiError && err.status === 404 ? new ApiError(404, '메모를 찾을 수 없어요.') : err
-    }),
-  createMemo: (m: SaveBody) => saveMemo(null, m),
-  updateMemo: (id: number, m: SaveBody) => saveMemo(id, m),
-  deleteMemo: (id: number) => db<void>(supabase.rpc('delete_memos', { p_ids: [id] })),
-  /** 본문에 붙여넣은 그림을 줄여서 올려요. 돌려받은 url("/img/번호")을 본문에 저장해요. */
-  uploadImage: async (file: Blob) => {
-    const form = new FormData()
-    form.append('file', await shrinkImage(file), 'image')
-    return fn<{ id: number; url: string }>('upload-image', form)
-  },
-  /** 여러 메모를 한 섹션으로 옮겨요. 수정일도 바뀌어요. 하나라도 남의 메모면 아무것도 바뀌지 않아요. */
-  moveMemos: (ids: number[], sectionId: number) => db<void>(supabase.rpc('move_memos', { p_ids: ids, p_section_id: sectionId })),
-  /** 여러 메모를 한 번에 지워요. */
-  deleteMemos: (ids: number[]) => db<void>(supabase.rpc('delete_memos', { p_ids: ids })),
-  /** 끌어 놓은 자리의 위(afterId)와 아래(beforeId) 메모 */
-  moveMemo: (id: number, afterId: number | null, beforeId: number | null) =>
-    db<void>(supabase.rpc('move_memo', { p_id: id, p_after_id: afterId, p_before_id: beforeId })),
 }

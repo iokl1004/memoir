@@ -1,8 +1,9 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
-import { api, type MemoFilter, type MemoSummary } from './api'
+import type { MemoFilter, MemoSummary } from './api'
 import SectionOptions from './SectionOptions'
 import type { SectionNode } from './sectionTree'
 import { dateFmt } from './shared'
+import { store } from './store'
 
 type Period = 'all' | '7' | '30' | '90' | 'custom'
 
@@ -56,7 +57,7 @@ export default function SearchBar({ tree, filter, onSearch, onOpenMemo }: {
     if (!term) return // 검색어가 없으면 미리보기를 그리지 않아요(shown 참고)
     let stale = false
     const timer = window.setTimeout(() => {
-      api.memos({ q: term, sectionId, ...(JSON.parse(rangeKey) ?? {}) }, 'UPDATED_DESC', 0, SUGGEST_SIZE).then(p => {
+      store.memos({ q: term, sectionId, ...(JSON.parse(rangeKey) ?? {}) }, 'UPDATED_DESC', 0, SUGGEST_SIZE).then(p => {
         if (stale) return
         setSuggest({ items: p.items, total: p.total, capped: p.totalCapped, hasNext: p.hasNext, page: 0 })
         setActive(-1)
@@ -68,7 +69,7 @@ export default function SearchBar({ tree, filter, onSearch, onOpenMemo }: {
   async function more() {
     if (!suggest) return
     const r = range() ?? {}
-    const p = await api.memos({ q: term, sectionId, ...r }, 'UPDATED_DESC', suggest.page + 1, SUGGEST_SIZE).catch(() => null)
+    const p = await store.memos({ q: term, sectionId, ...r }, 'UPDATED_DESC', suggest.page + 1, SUGGEST_SIZE).catch(() => null)
     if (!p) return
     setSuggest(s => s && { ...s, items: [...s.items, ...p.items], hasNext: p.hasNext, page: s.page + 1 })
   }

@@ -7,7 +7,7 @@ export const SAVED_EMAIL_KEY = 'memoir-email'
 const autoLogin = () => localStorage.getItem(AUTO_LOGIN_KEY) !== '0'
 
 /** 자동 로그인을 끄면 로그인 정보를 sessionStorage에 둬서, 브라우저(휴대폰은 그 탭)를 닫으면 로그아웃돼요. */
-const authStorage = {
+export const authStorage = {
   getItem: (key: string) => (autoLogin() ? localStorage : sessionStorage).getItem(key),
   setItem: (key: string, value: string) => (autoLogin() ? localStorage : sessionStorage).setItem(key, value),
   removeItem: (key: string) => { localStorage.removeItem(key); sessionStorage.removeItem(key) },

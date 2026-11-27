@@ -1,37 +1,18 @@
-import { supabase } from './supabase'
+import { store } from './store'
 
 /**
- * 본문에 저장하는 그림 주소는 "/img/{번호}"예요. 파일은 비공개 Storage에 있어서,
- * 편집기에 보여 줄 때만 기한이 있는 서명 주소로 바꾸고(data-img에 번호를 남겨요), 저장할 때 다시 "/img/{번호}"로 돌려요.
+ * 본문에 저장하는 그림 주소는 "/img/{번호}"예요. 아직 올리지 못한 그림은 임시 번호(음수)예요.
+ * 파일은 비공개 Storage에 있어서, 편집기에 보여 줄 때만 이 기기에 받아 둔 파일 주소(blob:)로 바꾸고
+ * (data-img에 번호를 남겨요), 저장할 때 다시 "/img/{번호}"로 돌려요.
  */
-const STORED = /src="\/img\/(\d+)"/g
-const SIGNED_SECONDS = 3600
-/** 같은 그림을 다시 열 때 새 주소를 받지 않아요. 주소가 같아야 브라우저 캐시가 살아서 전송량을 아껴요. */
-const cache = new Map<string, { url: string; until: number }>()
-
-async function signedUrls(ids: string[]): Promise<Map<string, string>> {
-  const userId = (await supabase.auth.getSession()).data.session?.user.id
-  const now = Date.now()
-  const missing = ids.filter(id => (cache.get(id)?.until ?? 0) < now + 60_000)
-  if (missing.length && userId) {
-    const { data } = await supabase.storage.from('images')
-      .createSignedUrls(missing.map(id => `${userId}/${id}`), SIGNED_SECONDS)
-    for (const [i, item] of (data ?? []).entries()) {
-      if (item.signedUrl) cache.set(missing[i], { url: item.signedUrl, until: now + SIGNED_SECONDS * 1000 })
-    }
-  }
-  return new Map(ids.flatMap(id => {
-    const hit = cache.get(id)
-    return hit ? [[id, hit.url]] : []
-  }))
-}
+const STORED = /src="\/img\/(-?\d+)"/g
 
 /** 저장된 본문 → 편집기에 넣을 본문 */
 export async function toEditorHtml(html: string): Promise<string> {
   const ids = [...new Set([...html.matchAll(STORED)].map(m => m[1]))]
   if (!ids.length) return html
-  const urls = await signedUrls(ids)
-  // 서명 주소를 못 받은 그림(지워진 그림 등)은 빈 그림으로 두되 번호는 남겨요.
+  const urls = new Map(await Promise.all(ids.map(async id => [id, await store.imageSrc(Number(id))] as const)))
+  // 받지 못한 그림(지워진 그림, 오프라인에서 처음 보는 그림)은 빈 그림으로 두되 번호는 남겨요.
   return html.replace(STORED, (_, id: string) => `src="${urls.get(id) ?? ''}" data-img="${id}"`)
 }
 
@@ -45,10 +26,8 @@ export function toStoredHtml(html: string): string {
   return doc.body.innerHTML
 }
 
-/** 새로 올린 그림을 편집기에 넣을 때 쓸 주소 */
-export async function editorSrc(id: number): Promise<string> {
-  return (await signedUrls([String(id)])).get(String(id)) ?? ''
-}
+/** 새로 넣은 그림을 편집기에 넣을 때 쓸 주소 */
+export const editorSrc = (id: number) => store.imageSrc(id)
 
 const MAX_SIDE = 2000
 /** 한 사람의 그림 저장 공간. 서버의 IMAGE_QUOTA_MB(upload-image 함수)와 같아야 해요. */

@@ -1,11 +1,12 @@
 import { useId, useRef, useState, type CSSProperties, type DragEvent, type PointerEvent } from 'react'
-import { api, ApiError, type MemoSummary } from './api'
+import { ApiError, type MemoSummary } from './api'
 import { useConfirm } from './confirm'
 import ContextMenu from './ContextMenu'
 import { moveTargets, subtreeIds, visibleNodes, type SectionNode, type SectionSort } from './sectionTree'
 import SortPicker from './SortPicker'
 import { SECTION_SORT_FIELDS } from './sorting'
 import { touchOnly } from './shared'
+import { store } from './store'
 
 type Editing =
   | { kind: 'add'; parentId: number | null }
@@ -85,7 +86,7 @@ export default function SectionNav({ tree, sort, onSortChange, draggingMemos, on
 
   async function move(id: number, parentId: number | null, beforeId: number | null = null) {
     try {
-      await api.moveSection(id, parentId, beforeId)
+      await store.moveSection(id, parentId, beforeId)
       if (parentId !== null) setCollapsed(prev => { const n = new Set(prev); n.delete(parentId); return n })
       setEditing(null)
       setError('')
@@ -171,10 +172,10 @@ export default function SectionNav({ tree, sort, onSortChange, draggingMemos, on
     if (!trimmed) { setError('섹션 이름을 적어 주세요.'); return }
     try {
       if (editing?.kind === 'add') {
-        await api.createSection(trimmed, editing.parentId)
+        await store.createSection(trimmed, editing.parentId)
         if (editing.parentId !== null) setCollapsed(prev => { const n = new Set(prev); n.delete(editing.parentId!); return n })
       } else if (editing?.kind === 'rename') {
-        await api.renameSection(editing.id, trimmed)
+        await store.renameSection(editing.id, trimmed)
       }
       setEditing(null)
       setError('')
@@ -197,7 +198,7 @@ export default function SectionNav({ tree, sort, onSortChange, draggingMemos, on
     })
     if (!ok) return
     try {
-      await api.deleteSection(section.id)
+      await store.deleteSection(section.id)
       onDeleted(section.id)
     } catch (err) {
       onError(err)
