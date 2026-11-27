@@ -353,6 +353,8 @@ function open(user: User): Promise<void> {
     if (keep) {
       const db = await openDb(name).catch(() => null)
       if (s !== me) { db?.close(); return }
+      // 다른 탭이 로그아웃하며 저장소를 지우려 하면 바로 놓아 줘요(안 놓으면 지우기가 막혀요).
+      if (db) db.onversionchange = () => { db.close(); if (me.db === db) me.db = null }
       me.db = db
       await exclusive(() => load(me))
       if (db) {
@@ -371,7 +373,12 @@ function open(user: User): Promise<void> {
 async function destroy() {
   const name = s?.name
   close()
-  if (name) await req(indexedDB.deleteDatabase(name)).catch(() => undefined)
+  if (!name) return
+  // 다른 탭이 아직 쓰고 있으면(blocked) 그 탭이 놓는 대로 지워져요. 로그아웃은 기다리지 않아요.
+  await new Promise<void>(done => {
+    const r = indexedDB.deleteDatabase(name)
+    r.onsuccess = r.onerror = r.onblocked = () => done()
+  })
 }
 
 async function view(): Promise<{ me: Session; d: Data }> {

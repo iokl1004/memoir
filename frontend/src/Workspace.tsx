@@ -68,10 +68,16 @@ export default function Workspace({ user, onLogout }: { user: User; onLogout: ()
 
   const tree = useMemo(() => buildTree(sections, sectionSort), [sections, sectionSort])
 
-  const fail = useCallback((err: unknown) => {
-    if (err instanceof ApiError && err.status === 401) onLogout()
-    else setStatus(err instanceof ApiError ? err.message : '서버와 연결하지 못했어요.')
+  /** 서버가 로그인을 거절했어요. 보내지 못한 변경이 없으면 이 기기에 남긴 메모도 지우고 나가요. */
+  const expired = useCallback(() => {
+    if (store.pending() === 0) void store.destroy()
+    onLogout()
   }, [onLogout])
+
+  const fail = useCallback((err: unknown) => {
+    if (err instanceof ApiError && err.status === 401) expired()
+    else setStatus(err instanceof ApiError ? err.message : '서버와 연결하지 못했어요.')
+  }, [expired])
 
   const loadSections = useCallback(() => store.sections().then(setSections, fail), [fail])
 
@@ -92,7 +98,7 @@ export default function Workspace({ user, onLogout }: { user: User; onLogout: ()
   }, [user])
   useEffect(() => onStore('change', () => setRev(r => r + 1)), [])
   useEffect(() => onStore('notice', setStatus), [])
-  useEffect(() => onStore('auth', onLogout), [onLogout])
+  useEffect(() => onStore('auth', expired), [expired])
   // 보낼 때 사본으로 저장했거나 새로 살린 메모로 고른 메모를 바꿔요. 편집기는 쓰던 내용 그대로예요.
   useEffect(() => onStore('replaced', ({ from, row }) => setSelection(sel =>
     sel.kind === 'memo' && resolve(sel.id) === resolve(from) ? { kind: 'memo', id: row.id } : sel)), [])

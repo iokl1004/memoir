@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { currentUser, type User } from './api'
 import AuthScreen from './AuthScreen'
 import ConfirmProvider from './ConfirmDialog'
+import { store } from './store'
 import { supabase } from './supabase'
 import Workspace from './Workspace'
 
@@ -27,7 +28,11 @@ export default function App() {
     currentUser().then(u => setUser(viaResetLink ? null : u), () => setUser(null))
     // 다른 탭에서 로그아웃했거나 로그인이 만료되면 로그인 화면으로 가요.
     const { data } = supabase.auth.onAuthStateChange(event => {
-      if (event === 'SIGNED_OUT') setUser(null)
+      if (event !== 'SIGNED_OUT') return
+      // 로그인이 끝나면(만료, 다른 기기·탭에서 로그아웃, 패스워드 변경) 이 기기에 남긴 메모도 지워요.
+      // 아직 보내지 못한 변경이 있으면 쓴 내용이 사라지지 않게 남겨 두고, 다시 로그인하면 보내요.
+      if (store.pending() === 0) void store.destroy()
+      setUser(null)
     })
     return () => data.subscription.unsubscribe()
     // eslint-disable-next-line react-hooks/exhaustive-deps
